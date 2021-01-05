@@ -12,7 +12,7 @@ a location is just a gps position/coordinate defined by a longitude, a latitude 
 - define a new location:
 
 ```
- let lcoation = Location {
+ let location = Location {
             longitude: 2.350987,
             latitude: 48.856667,
             altitude: 890.0,
