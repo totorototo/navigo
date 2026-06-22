@@ -1,268 +1,145 @@
 # navigo
 
-simply manipulate geojson map data - in rust
+simply manipulate GPS/geospatial data — in rust
 
+# api / usage
 
-# apis / usage
+## location
 
-## location:
+A location is a GPS coordinate defined by a longitude, a latitude, and an altitude.
 
-a location is just a gps position/coordinate defined by a longitude, a latitude and an altitude.
-
-- define a new location:
-
-```
- let location = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 890.0,
- };
+```rust
+let location = Location {
+    longitude: 2.350987,
+    latitude: 48.856667,
+    altitude: 890.0,
+};
 ```
 
-- calculate distance to location:
+- **calculate distance to another location** (km):
 
+```rust
+let distance: f64 = paris.calculate_distance_to(&moscow);
 ```
 
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 0.0,
- };
+- **calculate bearing to another location** (degrees):
 
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 0.0,
- };
-        
- let distance:f64 = paris.calculate_distance_to(&moscow);
+```rust
+let bearing: f64 = paris.calculate_bearing_to(&moscow);
 ```
 
+- **calculate elevation change to another location**:
 
-- calculate bearing to location:
-
-```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 0.0,
- };
-
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 0.0,
- };
-
- let bearing:f64 = paris.calculate_bearing_to(&moscow);
-
+```rust
+let elevation: Elevation = paris.calculate_elevation_to(&moscow);
+// elevation.positive — gain in meters
+// elevation.negative — loss in meters
 ```
 
-- calculate elevation to location:
+- **check if location is within a bounding box**:
 
-```
-  let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 0.0,
-  };
-
-  let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 200.0,
-  };
-
-  let elevation:Elevation = paris.calculate_elevation_to(&moscow);
-
+```rust
+let area = Area {
+    min_latitude: 54.755787,
+    max_latitude: 56.755787,
+    min_longitude: 36.617634,
+    max_longitude: 38.617634,
+};
+let is_in: bool = paris.is_in_area(&area);
 ```
 
-- check if location is in squared area:
+- **check if location is within a radius** (meters):
 
-```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 0.0,
- };
-
- let area = Area {
-            max_latitude: 56.755787,
-            min_latitude: 54.755787,
-            min_longitude: 36.617634,
-            max_longitude: 38.617634,
- };
-
- let is_in:bool = paris.is_in_area(&area);
-
+```rust
+let is_in: bool = location.is_in_radius(&center, &70000.0);
 ```
 
-- check if location is in a radius:
+---
 
-```
- let center = Location {
-            longitude: 6.23828,
-            latitude: 45.50127,
-            altitude: 0.0,
- };
-        
- let location = Location {
-            longitude: 5.77367,
-            latitude: 45.07122,
-            altitude: 0.0,
- };
+## trace
 
- let radius = 70000.00;
- let is_in:bool = location.is_in_radius(&center, &radius);
+A trace is a sequence of GPS locations.
+
+- **build a trace**:
+
+```rust
+let locations = vec![paris, moscow];
+let trace = build_trace(&locations);
+// or directly:
+let trace = Trace { locations: &locations };
 ```
 
-## trace: 
+- **total length** (km):
 
-A trace is composed by following gps locations.
-
-- create / define a trace:
-
-```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 800.00,
- };
-
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 200.00,
- };
-        
- let locations = vec![paris, moscow];
- let trace = Trace { locations };
+```rust
+let length: f64 = trace.length();
 ```
 
-- get trace length: 
+- **cumulative elevation**:
 
-```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 800.00,
- };
-
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 200.00,
- };
-        
- let locations = vec![paris, moscow];
- let trace = Trace { locations };
- 
-  let length:f64 = trace.length();
+```rust
+let elevation: Elevation = trace.elevation();
 ```
 
-- get trace elevation: 
+- **bounding box**:
 
-```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 800.00,
- };
-
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 200.00,
- };
-        
- let locations = vec![paris, moscow];
- let trace = Trace { locations };
- 
- let elevation:Elevation = trace.elevation();
+```rust
+let area: Result<Area, &str> = trace.area();
 ```
 
-- get trace squared area: 
+- **sub-section by index range** (inclusive):
 
+```rust
+let section: Result<Vec<Location>, &str> = trace.get_section(start_index, end_index);
 ```
- let paris = Location {
-            longitude: 2.350987,
-            latitude: 48.856667,
-            altitude: 800.00,
- };
 
- let moscow = Location {
-            longitude: 37.617634,
-            latitude: 55.755787,
-            altitude: 200.00,
- };
-        
- let locations = vec![paris, moscow];
- let trace = Trace { locations }; 
-
- let computed_area:Result<Area, &str> = trace.area();
-```
+---
 
 ## analyzer
 
-An analyser is just a helper tool to manipulate trace locations.
+The `Analyzer` computes statistics over a trace and provides spatial queries.
 
-- create a new analyzer: 
-
-```
-  let locations = ...;
-  let trace = Trace { locations };
-  
-  let analyzer = Analyzer::new(&trace);
+```rust
+let analyzer = Analyzer::new(&trace);
 ```
 
-- get position at a given mark: 
+- **location at a distance mark** (km):
 
-```
-  let locations = ...;
-  let trace = Trace { locations };
-  
-  let analyzer = Analyzer::new(&trace);
-  
-  let location:Result<&Location, &str> = analyzer.get_location_at(100.2);
+```rust
+let location: Result<&Location, &str> = analyzer.get_location_at(100.2);
 ```
 
-- get position index:
+- **elevation at a distance mark** (km):
 
-```
-  let locations = ...;
-  let trace = Trace { locations };
-  
-  let analyzer = Analyzer::new(&trace);  
-  let location:Result<usize, &str> = analyzer.find_location_index_at(100.2);
+```rust
+let elevation: Result<&Elevation, &str> = analyzer.get_elevation_at(100.2);
 ```
 
-- compute the closest location from trace:
+- **index of the location closest to a distance mark**:
 
-```
-  let locations = ...;
-  let trace = Trace { locations };
-  
-  let analyzer = Analyzer::new(&trace);
-  
-  let current_location = Location {
-            longitude: 1.350987,
-            latitude: 49.856667,
-            altitude: 800.00,
-  };
-  
-  let closest_location:Result<&Location, &str> = analyzer.compute_closest_location(&current_location);
+```rust
+let index: Result<usize, &str> = analyzer.find_location_index_at(100.2);
 ```
 
+- **index of a specific location**:
 
-- get trace section: 
+```rust
+let index: Result<usize, &str> = analyzer.find_location_index(&location);
+```
 
+- **closest location in the trace to a given point**:
+
+```rust
+let closest: Result<&Location, &str> = analyzer.compute_closest_location(&current_location);
 ```
-  let locations = ...;
-  let trace = Trace { locations };
-  
-  let analyzer = Analyzer::new(&trace);  
-  let sub_section:Result<Vec<Location>, &str> = analyzer.get_trace_section(0.0, 0.2);
+
+- **sub-section between two distance marks** (km):
+
+```rust
+let section: Result<Vec<Location>, &str> = analyzer.get_trace_section(0.0, 10.5);
 ```
+
+---
 
 ## license
 
