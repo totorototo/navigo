@@ -9,7 +9,7 @@ pub struct Analyzer<'a> {
 }
 
 #[derive(Debug)]
-pub struct Stats {
+struct Stats {
     distance: f64,
     elevation: Elevation,
 }

@@ -1,4 +1,4 @@
-use navigo::{approx_equal, build_trace, Location};
+use navigo::{build_trace, Location};
 
 
 #[test]
@@ -21,5 +21,5 @@ fn should_build_trace() {
     let length = trace.length();
 
     assert!(trace.locations.len() > 0);
-    assert!(approx_equal(length, 2486.340992526076, 1e-10));
+    assert!((length - 2486.340992526076).abs() < 1e-10);
 }

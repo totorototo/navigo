@@ -2,6 +2,7 @@ mod analyzer;
 mod area;
 mod data;
 mod elevation;
+#[cfg(test)]
 mod helper;
 mod location;
 mod trace;
@@ -12,7 +13,6 @@ pub use area::Area;
 pub use elevation::Elevation;
 pub use location::Location;
 pub use trace::Trace;
-pub use utils::approx_equal;
 
 pub fn build_trace(locations: &[Location]) -> Trace<'_> {
     Trace { locations }
@@ -21,6 +21,7 @@ pub fn build_trace(locations: &[Location]) -> Trace<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::approx_equal;
 
     #[test]
     fn should_build_a_trace() {
