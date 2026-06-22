@@ -16,19 +16,19 @@ let location = Location {
 };
 ```
 
-- **calculate distance to another location** (km):
+- **distance to another location** (km):
 
 ```rust
 let distance: f64 = paris.calculate_distance_to(&moscow);
 ```
 
-- **calculate bearing to another location** (degrees):
+- **bearing to another location** (degrees):
 
 ```rust
 let bearing: f64 = paris.calculate_bearing_to(&moscow);
 ```
 
-- **calculate elevation change to another location**:
+- **elevation change to another location**:
 
 ```rust
 let elevation: Elevation = paris.calculate_elevation_to(&moscow);
@@ -36,49 +36,86 @@ let elevation: Elevation = paris.calculate_elevation_to(&moscow);
 // elevation.negative — loss in meters
 ```
 
-- **check if location is within a bounding box**:
+- **check if inside a bounding box**:
 
 ```rust
-let area = Area {
-    min_latitude: 54.755787,
-    max_latitude: 56.755787,
-    min_longitude: 36.617634,
-    max_longitude: 38.617634,
-};
-let is_in: bool = paris.is_in_area(&area);
+let area = Area { min_latitude: 54.7, max_latitude: 56.7,
+                  min_longitude: 36.6, max_longitude: 38.6 };
+let is_in: bool = location.is_in_area(&area);
 ```
 
-- **check if location is within a radius** (meters):
+- **check if inside a radius** (km):
 
 ```rust
-let is_in: bool = location.is_in_radius(&center, &70000.0);
+let is_in: bool = location.is_in_radius(&center, &70.0);
 ```
 
 ---
 
 ## trace
 
-A trace is a sequence of GPS locations.
-
-- **build a trace**:
+`Trace::new` ingests raw GPS locations and precomputes everything in one shot:
+- Douglas-Peucker simplification (for traces > 1 000 points, ε = 15 m)
+- Cumulative distances
+- Denoised cumulative elevation gain / loss (median smoothing + hysteresis)
+- Smoothed slope at each point
+- Peaks and valleys (AMPD algorithm with prominence filter)
+- Qualifying climb segments (Garmin-style thresholds)
 
 ```rust
-let locations = vec![paris, moscow];
+let trace = Trace::new(&locations);
+// or via the convenience wrapper:
 let trace = build_trace(&locations);
-// or directly:
-let trace = Trace { locations: &locations };
 ```
+
+### precomputed fields
+
+```rust
+trace.locations                   // Vec<Location>  — simplified working set
+trace.cumulative_distances        // Vec<f64>        — km from start, [0] == 0.0
+trace.cumulative_elevation_gains  // Vec<f64>        — denoised gain in meters
+trace.cumulative_elevation_losses // Vec<f64>        — denoised loss in meters
+trace.slopes                      // Vec<f64>        — % grade at each point
+trace.peaks                       // Vec<usize>      — indices of detected peaks
+trace.valleys                     // Vec<usize>      — indices of detected valleys
+trace.climbs                      // Vec<ClimbStats> — qualifying climb segments
+trace.total_distance              // f64             — total distance in km
+trace.total_elevation_gain        // f64             — total denoised gain in meters
+trace.total_elevation_loss        // f64             — total denoised loss in meters
+```
+
+### methods
 
 - **total length** (km):
 
 ```rust
-let length: f64 = trace.length();
+let length: f64 = trace.length(); // alias for total_distance
 ```
 
-- **cumulative elevation**:
+- **location at a cumulative distance** (km):
 
 ```rust
-let elevation: Elevation = trace.elevation();
+let loc: Option<&Location> = trace.point_at_distance(42.0);
+```
+
+- **index at a cumulative distance** (binary search):
+
+```rust
+let idx: usize = trace.index_at_distance(42.0);
+```
+
+- **slice between two distance marks** (km, both ends inclusive):
+
+```rust
+let section: Option<&[Location]> = trace.slice_between_distances(10.0, 50.0);
+```
+
+- **closest location to a point** (early-stop heuristic for loop courses):
+
+```rust
+let (loc, idx, dist_km) = trace.find_closest_point(&target).unwrap();
+// start search from a known index (e.g. to handle loop courses):
+let result = trace.find_closest_point_from(&target, start_from);
 ```
 
 - **bounding box**:
@@ -93,51 +130,22 @@ let area: Result<Area, &str> = trace.area();
 let section: Result<Vec<Location>, &str> = trace.get_section(start_index, end_index);
 ```
 
----
-
-## analyzer
-
-The `Analyzer` computes statistics over a trace and provides spatial queries.
+### climb stats
 
 ```rust
-let analyzer = Analyzer::new(&trace);
+pub struct ClimbStats {
+    pub start_index:    usize, // valley index in trace.locations
+    pub end_index:      usize, // summit index in trace.locations
+    pub start_dist_km:  f64,
+    pub climb_dist_km:  f64,
+    pub elevation_gain: f64,   // meters
+    pub summit_elev:    f64,   // meters
+    pub avg_gradient:   f64,   // %
+}
 ```
 
-- **location at a distance mark** (km):
-
-```rust
-let location: Result<&Location, &str> = analyzer.get_location_at(100.2);
-```
-
-- **elevation at a distance mark** (km):
-
-```rust
-let elevation: Result<&Elevation, &str> = analyzer.get_elevation_at(100.2);
-```
-
-- **index of the location closest to a distance mark**:
-
-```rust
-let index: Result<usize, &str> = analyzer.find_location_index_at(100.2);
-```
-
-- **index of a specific location**:
-
-```rust
-let index: Result<usize, &str> = analyzer.find_location_index(&location);
-```
-
-- **closest location in the trace to a given point**:
-
-```rust
-let closest: Result<&Location, &str> = analyzer.compute_closest_location(&current_location);
-```
-
-- **sub-section between two distance marks** (km):
-
-```rust
-let section: Result<Vec<Location>, &str> = analyzer.get_trace_section(0.0, 10.5);
-```
+Climbs are qualified using Garmin Climb Pro thresholds:
+`distance ≥ 500 m`, `average gradient ≥ 3 %`, `distance × gradient > 3 500 m·%`
 
 ---
 
