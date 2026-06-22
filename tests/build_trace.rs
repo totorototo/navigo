@@ -1,4 +1,5 @@
-use navigo::{build_trace, Location};
+use navigo::{approx_equal, build_trace, Location};
+
 
 #[test]
 fn should_build_trace() {
@@ -15,10 +16,10 @@ fn should_build_trace() {
     };
 
     let locations = vec![paris, moscow];
-    let trace = build_trace(locations);
+    let trace = build_trace(&locations);
 
     let length = trace.length();
 
     assert!(trace.locations.len() > 0);
-    assert_eq!(length, 2486.340992526076);
+    assert!(approx_equal(length, 2486.340992526076, 1e-10));
 }

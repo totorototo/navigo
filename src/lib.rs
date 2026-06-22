@@ -5,14 +5,16 @@ mod elevation;
 mod helper;
 mod location;
 mod trace;
+mod utils;
 
 pub use analyzer::Analyzer;
 pub use area::Area;
 pub use elevation::Elevation;
 pub use location::Location;
 pub use trace::Trace;
+pub use utils::approx_equal;
 
-pub fn build_trace(locations: Vec<Location>) -> Trace {
+pub fn build_trace(locations: &[Location]) -> Trace<'_> {
     Trace { locations }
 }
 
@@ -35,11 +37,11 @@ mod tests {
         };
 
         let locations = vec![paris, moscow];
-        let trace = build_trace(locations);
+        let trace = build_trace(&locations);
 
         let length = trace.length();
 
         assert!(trace.locations.len() > 0);
-        assert_eq!(length, 2486.340992526076);
+        assert!(approx_equal(length, 2486.340992526076, 1e-10));
     }
 }

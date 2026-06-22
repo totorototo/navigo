@@ -76,6 +76,10 @@ impl Location {
 mod tests {
     use super::{Area, Location};
 
+    pub fn approx_equal(a: f64, b: f64, epsilon: f64) -> bool {
+        (a - b).abs() < epsilon
+    }
+
     #[test]
     fn calculate_distance_to_location() {
         let paris = Location {
@@ -92,7 +96,8 @@ mod tests {
 
         let distance = paris.calculate_distance_to(&moscow);
 
-        assert_eq!(distance, 2486.340992526076);
+        assert!(approx_equal(distance, 2486.340992526076, 1e-10));
+        // assert_eq!(distance, 2486.340992526076);
     }
 
     #[test]

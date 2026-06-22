@@ -1,64 +1,44 @@
 use crate::{Area, Elevation, Location};
 
 #[derive(Debug)]
-pub struct Trace {
-    pub locations: Vec<Location>,
+pub struct Trace<'a> {
+    pub locations: &'a [Location],
 }
 
-impl Trace {
+impl<'a> Trace<'a> {
     pub fn length(&self) -> f64 {
         self.locations
-            .iter()
-            .enumerate()
-            .fold(0.0, |acc, (index, location)| {
-                let next = self.locations.iter().nth(index + 1);
-                match next {
-                    Some(next_location) => {
-                        let distance = location.calculate_distance_to(next_location);
-                        acc + distance
-                    }
-                    None => acc,
-                }
-            })
+            .windows(2)
+            .map(|pair| pair[0].calculate_distance_to(&pair[1]))
+            .sum()
     }
 
     pub fn elevation(&self) -> Elevation {
-        self.locations.iter().enumerate().fold(
-            Elevation {
-                positive: 0.00,
-                negative: 0.00,
-            },
-            |mut acc, (index, location)| {
-                let next = self.locations.iter().nth(index + 1);
-                match next {
-                    Some(next_location) => {
-                        let delta = next_location.altitude - location.altitude;
-                        match delta > 0.0 {
-                            true => {
-                                acc.positive += delta;
-                                acc
-                            }
-                            false => {
-                                acc.negative += delta.abs();
-                                acc
-                            }
-                        }
+        self.locations
+            .windows(2)
+            .map(|pair| pair[1].altitude - pair[0].altitude)
+            .fold(
+                Elevation {
+                    positive: 0.0,
+                    negative: 0.0,
+                },
+                |mut acc, delta| {
+                    if delta > 0.0 {
+                        acc.positive += delta;
+                    } else {
+                        acc.negative += delta.abs();
                     }
-                    None => acc,
-                }
-            },
-        )
+                    acc
+                },
+            )
     }
 
     pub fn area(&self) -> Result<Area, &str> {
-        if self.locations.len() == 0 {
+        if self.locations.is_empty() {
             return Err("could not compute area");
         }
 
-        let first_location = match self.locations.iter().nth(0) {
-            Some(location) => location,
-            None => return Err("unable to retrieve first location"),
-        };
+        let first_location = &self.locations[0];
 
         let initial_state = Area {
             min_longitude: first_location.longitude,
@@ -81,24 +61,15 @@ impl Trace {
     }
 
     pub fn get_section(&self, start_index: usize, end_index: usize) -> Result<Vec<Location>, &str> {
-        if self.locations.len() == 0 {
+        if self.locations.is_empty() {
             return Err("could not compute section");
         }
 
-        let section =
-            self.locations
-                .iter()
-                .enumerate()
-                .fold(Vec::new(), |mut acc, (index, item)| {
-                    if index > start_index && index < end_index {
-                        acc.push(*item);
-                        acc
-                    } else {
-                        acc
-                    }
-                });
+        if start_index >= end_index {
+            return Err("start_index must be smaller than end_index");
+        }
 
-        Ok(section)
+        Ok(self.locations[start_index..=end_index].to_vec())
     }
 }
 
@@ -111,7 +82,9 @@ mod tests {
     #[test]
     fn compute_trace_elevation() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let elevation = trace.elevation();
 
@@ -122,7 +95,9 @@ mod tests {
     #[test]
     fn compute_trace_distance() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let length = trace.length();
 
@@ -144,7 +119,9 @@ mod tests {
         };
 
         let locations = vec![paris, moscow];
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let computed_area = trace.area();
         assert_eq!(computed_area.is_ok(), true);
@@ -161,8 +138,10 @@ mod tests {
 
     #[test]
     fn should_return_error_while_computing_area_for_empty_trace() {
-        let locations = vec![];
-        let trace = Trace { locations };
+        let locations: Vec<Location> = vec![];
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let computed_area = trace.area();
 
@@ -172,8 +151,10 @@ mod tests {
 
     #[test]
     fn should_return_error_while_getting_trace_section_for_empty_trace() {
-        let locations = vec![];
-        let trace = Trace { locations };
+        let locations: Vec<Location> = vec![];
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let computed_section = trace.get_section(0, 10);
 
@@ -184,9 +165,16 @@ mod tests {
     #[test]
     fn should_retrieve_section() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let section = vec![
+            Location {
+                longitude: 0.32839999999999997,
+                latitude: 42.8296,
+                altitude: 792.0,
+            },
             Location {
                 longitude: 0.32882,
                 latitude: 42.829181,
@@ -196,6 +184,11 @@ mod tests {
                 longitude: 0.328684,
                 latitude: 42.828782,
                 altitude: 793.0,
+            },
+            Location {
+                longitude: 0.328297,
+                latitude: 42.827189999999995,
+                altitude: 796.0,
             },
         ];
 

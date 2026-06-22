@@ -4,7 +4,7 @@ use crate::{Elevation, Location, Trace};
 // Trace borrows (pre-existing) instances of Trace
 #[derive(Debug)]
 pub struct Analyzer<'a> {
-    pub trace: &'a Trace,
+    pub trace: &'a Trace<'a>,
     statistics: Vec<Stats>,
 }
 
@@ -15,60 +15,37 @@ pub struct Stats {
 }
 
 impl<'a> Analyzer<'a> {
-    pub fn new(trace: &'a Trace) -> Self {
-        // use std::time::Instant;
-        // let now = Instant::now();
-
+    pub fn new(trace: &'a Trace<'a>) -> Self {
         let statistics = Analyzer::compute_analytics(trace);
-        // let elapsed = now.elapsed();
-        // println!("Elapsed: {:?}", elapsed);
-
         Analyzer { trace, statistics }
     }
 
-    fn compute_analytics(trace: &Trace) -> Vec<Stats> {
-        let stat = Stats {
-            distance: 0.0,
-            elevation: Elevation {
-                positive: 0.0,
-                negative: 0.0,
-            },
-        };
-        let initial_value = vec![stat];
-
+    fn compute_analytics(trace: &Trace<'a>) -> Vec<Stats> {
         let mut cumulative_distance = 0.0;
         let mut cumulative_elevation_gain = 0.0;
         let mut cumulative_elevation_loss = 0.0;
 
         trace
             .locations
-            .iter()
-            .enumerate()
-            .fold(initial_value, |mut acc, (index, location)| {
-                let next = trace.locations.iter().nth(index + 1);
-                match next {
-                    Some(next_location) => {
-                        let distance = location.calculate_distance_to(next_location);
-                        cumulative_distance += distance;
+            .windows(2)
+            .map(|window| {
+                let (location, next_location) = (&window[0], &window[1]);
+                let distance = location.calculate_distance_to(next_location);
+                cumulative_distance += distance;
 
-                        let elevation = location.calculate_elevation_to(next_location);
-                        cumulative_elevation_gain += elevation.positive;
-                        cumulative_elevation_loss += elevation.negative;
+                let elevation = location.calculate_elevation_to(next_location);
+                cumulative_elevation_gain += elevation.positive;
+                cumulative_elevation_loss += elevation.negative;
 
-                        let stat = Stats {
-                            distance: cumulative_distance,
-                            elevation: Elevation {
-                                positive: cumulative_elevation_gain,
-                                negative: cumulative_elevation_loss,
-                            },
-                        };
-
-                        acc.push(stat);
-                        acc
-                    }
-                    None => acc,
+                Stats {
+                    distance: cumulative_distance,
+                    elevation: Elevation {
+                        positive: cumulative_elevation_gain,
+                        negative: cumulative_elevation_loss,
+                    },
                 }
             })
+            .collect()
     }
 
     pub fn compute_closest_location(&self, current_location: &Location) -> Result<&Location, &str> {
@@ -82,19 +59,19 @@ impl<'a> Analyzer<'a> {
             None => return Err("could not retrieve first trace location"),
         };
 
-        let location = self
-            .trace
-            .locations
-            .iter()
-            .fold(initial_value, |acc, location| {
-                // TODO: could be improved (computed twice)
-                let ref_distance = current_location.calculate_distance_to(acc);
+        let (location, _) = self.trace.locations.iter().fold(
+            (
+                initial_value,
+                current_location.calculate_distance_to(initial_value),
+            ),
+            |(acc, ref_distance), location| {
                 let new_distance = current_location.calculate_distance_to(location);
                 match new_distance < ref_distance {
-                    true => location,
-                    false => acc,
+                    true => (location, new_distance),
+                    false => (acc, ref_distance),
                 }
-            });
+            },
+        );
         Ok(location)
     }
 
@@ -161,6 +138,13 @@ impl<'a> Analyzer<'a> {
             .ok_or_else(|| "location not found")
     }
 
+    pub fn get_elevation_at(&self, distance: f64) -> Result<&Elevation, &str> {
+        self.statistics
+            .get(self.find_location_index_at(distance)?)
+            .map(|stats| &stats.elevation)
+            .ok_or_else(|| "elevation not found")
+    }
+
     pub fn get_trace_section(&self, start: f64, end: f64) -> Result<Vec<Location>, &str> {
         let last_stats = self.statistics.last();
 
@@ -191,19 +175,23 @@ mod tests {
     #[test]
     fn should_find_location_index() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
         let index = analyzer.find_location_index_at(0.2);
         assert_eq!(index.is_ok(), true);
-        assert_eq!(index.ok(), Some(4));
+        assert_eq!(index.ok(), Some(3));
     }
 
     #[test]
     fn should_return_error_while_getting_location_for_wrong_mark() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
@@ -216,12 +204,14 @@ mod tests {
     #[test]
     fn should_get_location_for_200_mark() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let matched_location = Location {
-            longitude: 0.328684,
-            latitude: 42.828782,
-            altitude: 793.0,
+            longitude: 0.32882,
+            latitude: 42.829181,
+            altitude: 792.0,
         };
 
         let analyzer = Analyzer::new(&trace);
@@ -240,8 +230,10 @@ mod tests {
             altitude: 800.00,
         };
 
-        let locations = vec![];
-        let trace = Trace { locations };
+        let locations: Vec<Location> = vec![];
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
@@ -266,7 +258,9 @@ mod tests {
         };
 
         let locations = vec![paris, moscow];
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
@@ -285,7 +279,9 @@ mod tests {
     #[test]
     fn find_location_index() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
@@ -304,7 +300,9 @@ mod tests {
     #[test]
     fn should_not_get_any_location_index() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
 
@@ -322,9 +320,16 @@ mod tests {
     #[test]
     fn should_get_a_location_section() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let section = vec![
+            Location {
+                longitude: 0.327345,
+                latitude: 42.829777,
+                altitude: 793.0,
+            },
             Location {
                 longitude: 0.32802,
                 latitude: 42.829719999999995,
@@ -350,9 +355,40 @@ mod tests {
     }
 
     #[test]
+    fn should_get_elevation_for_200_mark() {
+        let locations = helper::get_locations();
+        let trace = Trace {
+            locations: &locations,
+        };
+
+        let analyzer = Analyzer::new(&trace);
+
+        let elevation = analyzer.get_elevation_at(0.2);
+
+        assert_eq!(elevation.is_ok(), true);
+    }
+
+    #[test]
+    fn should_return_error_while_getting_elevation_for_wrong_mark() {
+        let locations = helper::get_locations();
+        let trace = Trace {
+            locations: &locations,
+        };
+
+        let analyzer = Analyzer::new(&trace);
+
+        let elevation = analyzer.get_elevation_at(-100.2);
+
+        assert_eq!(elevation.is_ok(), false);
+        assert_eq!(elevation.err(), Some("negative mark"));
+    }
+
+    #[test]
     fn should_return_error_while_getting_trace_section() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
         let section = analyzer.get_trace_section(0.0, 10000.2);
@@ -364,7 +400,9 @@ mod tests {
     #[test]
     fn should_return_error_while_getting_trace_section_negative_value() {
         let locations = helper::get_locations();
-        let trace = Trace { locations };
+        let trace = Trace {
+            locations: &locations,
+        };
 
         let analyzer = Analyzer::new(&trace);
         let section = analyzer.get_trace_section(-20.0, 0.2);
