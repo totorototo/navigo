@@ -1,5 +1,10 @@
 # navigo
 
+[![CI](https://github.com/totorototo/navigo/actions/workflows/ci.yml/badge.svg)](https://github.com/totorototo/navigo/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/navigo.svg)](https://crates.io/crates/navigo)
+[![docs.rs](https://docs.rs/navigo/badge.svg)](https://docs.rs/navigo)
+[![License](https://img.shields.io/crates/l/navigo.svg)](LICENSE)
+
 simply manipulate GPS/geospatial data — in rust
 
 # api / usage
