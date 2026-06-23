@@ -1,14 +1,21 @@
-use crate::data::COORDINATES;
 use crate::Location;
+
+const ROUTE_CSV: &str = include_str!("../tests/fixtures/route.csv");
 
 #[allow(dead_code)]
 pub fn get_locations() -> Vec<Location> {
-    COORDINATES
-        .iter()
-        .map(|x| Location {
-            longitude: x[0],
-            latitude: x[1],
-            altitude: x[2],
+    ROUTE_CSV
+        .lines()
+        .map(|line| {
+            let mut parts = line.split(',');
+            let longitude = parts.next().unwrap().parse().unwrap();
+            let latitude = parts.next().unwrap().parse().unwrap();
+            let altitude = parts.next().unwrap().parse().unwrap();
+            Location {
+                longitude,
+                latitude,
+                altitude,
+            }
         })
         .collect()
 }

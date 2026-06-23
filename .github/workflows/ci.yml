@@ -44,10 +44,40 @@ jobs:
         run: cargo build --release
 
       - name: Clippy
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets --all-features
 
       - name: Test
-        run: cargo test
+        run: cargo test --all-features
+
+  wasm:
+    name: WASM build (demo)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: demo/package-lock.json
+
+      - name: Install demo dependencies
+        working-directory: demo
+        run: npm ci
+
+      - name: Build demo (wasm-pack + vite)
+        working-directory: demo
+        run: npm run build
 
   publish:
     name: Publish to crates.io
