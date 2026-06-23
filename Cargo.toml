@@ -1,7 +1,7 @@
 [package]
 name = "navigo"
 version = "0.1.0"
-authors = ["Thomas Gilbert <thomas.gilbert@dolby.com>"]
+authors = ["Thomas <el.totorototo@gmail.com>"]
 edition = "2021"
 description = "Simply manipulate GPS/geospatial data in Rust — distances, elevation, simplification, climb detection."
 license = "MIT"
@@ -13,4 +13,3 @@ categories = ["science::geo", "algorithms"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-
