@@ -141,6 +141,26 @@ mod tests {
     }
 
     #[test]
+    fn location_should_be_inside_area() {
+        let moscow = Location {
+            longitude: 37.617634,
+            latitude: 55.755787,
+            altitude: 0.0,
+        };
+
+        let area = Area {
+            max_latitude: 56.755787,
+            min_latitude: 54.755787,
+            min_longitude: 36.617634,
+            max_longitude: 38.617634,
+        };
+
+        let is_in = moscow.is_in_area(&area);
+
+        assert!(is_in);
+    }
+
+    #[test]
     fn location_should_be_in_radius() {
         let center = Location {
             longitude: 6.23828,
@@ -177,5 +197,25 @@ mod tests {
 
         assert_eq!(200.0, elevation.positive);
         assert_eq!(0.0, elevation.negative);
+    }
+
+    #[test]
+    fn calculate_elevation_to_descending() {
+        let moscow = Location {
+            longitude: 37.617634,
+            latitude: 55.755787,
+            altitude: 200.0,
+        };
+
+        let paris = Location {
+            longitude: 2.350987,
+            latitude: 48.856667,
+            altitude: 0.0,
+        };
+
+        let elevation = moscow.calculate_elevation_to(&paris);
+
+        assert_eq!(0.0, elevation.positive);
+        assert_eq!(200.0, elevation.negative);
     }
 }

@@ -466,4 +466,79 @@ mod tests {
         assert_eq!(area.min_latitude, 48.856667);
         assert_eq!(area.max_latitude, 55.755787);
     }
+
+    // ── elevation ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn elevation_sums_gains_and_losses() {
+        let locations = [
+            Location {
+                longitude: 0.0,
+                latitude: 0.0,
+                altitude: 100.0,
+            },
+            Location {
+                longitude: 0.0,
+                latitude: 0.001,
+                altitude: 150.0,
+            },
+            Location {
+                longitude: 0.0,
+                latitude: 0.002,
+                altitude: 120.0,
+            },
+        ];
+        let trace = Trace::new(&locations);
+        let elevation = trace.elevation();
+        assert_eq!(elevation.positive, 50.0);
+        assert_eq!(elevation.negative, 30.0);
+    }
+
+    #[test]
+    fn elevation_on_empty_trace_is_zero() {
+        let trace = Trace::new(&[]);
+        let elevation = trace.elevation();
+        assert_eq!(elevation.positive, 0.0);
+        assert_eq!(elevation.negative, 0.0);
+    }
+
+    // ── get_section ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn get_section_returns_sub_slice() {
+        let locations = helper::get_locations();
+        let trace = Trace::new(&locations);
+        let section = trace.get_section(1, 3).unwrap();
+        assert_eq!(section, trace.locations[1..=3].to_vec());
+    }
+
+    #[test]
+    fn get_section_on_empty_trace_errs() {
+        let trace = Trace::new(&[]);
+        assert!(trace.get_section(0, 1).is_err());
+    }
+
+    #[test]
+    fn get_section_start_not_smaller_than_end_errs() {
+        let locations = helper::get_locations();
+        let trace = Trace::new(&locations);
+        assert!(trace.get_section(2, 2).is_err());
+        assert!(trace.get_section(3, 1).is_err());
+    }
+
+    #[test]
+    fn get_section_out_of_bounds_errs() {
+        let locations = helper::get_locations();
+        let trace = Trace::new(&locations);
+        let len = trace.locations.len();
+        assert!(trace.get_section(0, len).is_err());
+    }
+
+    // ── index_at_distance / slice_between_distances on empty trace ───────────
+
+    #[test]
+    fn index_at_distance_on_empty_trace_is_zero() {
+        let trace = Trace::new(&[]);
+        assert_eq!(trace.index_at_distance(5.0), 0);
+    }
 }
