@@ -128,7 +128,11 @@ impl WasmTrace {
 
     /// Returns `{ location: { longitude, latitude, altitude }, index, distance }` or `null`.
     pub fn find_closest_point(&self, longitude: f64, latitude: f64, altitude: f64) -> JsValue {
-        let target = Location { longitude, latitude, altitude };
+        let target = Location {
+            longitude,
+            latitude,
+            altitude,
+        };
         closest_result(self.inner.find_closest_point(&target))
     }
 
@@ -141,8 +145,15 @@ impl WasmTrace {
         altitude: f64,
         start_from: u32,
     ) -> JsValue {
-        let target = Location { longitude, latitude, altitude };
-        closest_result(self.inner.find_closest_point_from(&target, start_from as usize))
+        let target = Location {
+            longitude,
+            latitude,
+            altitude,
+        };
+        closest_result(
+            self.inner
+                .find_closest_point_from(&target, start_from as usize),
+        )
     }
 
     /// Flat `Float64Array` `[lon, lat, alt, …]` for all points between the two
@@ -157,7 +168,10 @@ impl WasmTrace {
     /// Flat `Float64Array` `[lon, lat, alt, …]` for the index range (inclusive),
     /// or `null` on out-of-bounds input.
     pub fn get_section(&self, start_index: u32, end_index: u32) -> JsValue {
-        match self.inner.get_section(start_index as usize, end_index as usize) {
+        match self
+            .inner
+            .get_section(start_index as usize, end_index as usize)
+        {
             Ok(locs) => js_sys::Float64Array::from(locs_to_flat(&locs).as_slice()).into(),
             Err(_) => JsValue::NULL,
         }
