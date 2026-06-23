@@ -36,6 +36,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+      - name: Build
+        run: cargo build
+
+      - name: Build (release)
+        run: cargo build --release
+
       - name: Clippy
         run: cargo clippy --all-targets
 
