@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Area {
     pub min_longitude: f64,
     pub max_longitude: f64,

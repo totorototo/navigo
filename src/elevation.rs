@@ -79,7 +79,7 @@ pub fn median_smooth(locations: &[Location], cum_dist: &[f64], radius_km: f64) -
         let (mut win_lo, mut win_hi) = (lo, hi);
         if win_hi - win_lo + 1 > MAX_WINDOW_SAMPLES {
             let half = MAX_WINDOW_SAMPLES / 2;
-            win_lo = if i > half { i - half } else { 0 };
+            win_lo = i.saturating_sub(half);
             win_hi = (win_lo + MAX_WINDOW_SAMPLES - 1).min(n - 1);
         }
 
