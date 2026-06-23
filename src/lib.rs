@@ -26,8 +26,16 @@ mod tests {
 
     #[test]
     fn should_build_a_trace() {
-        let paris = Location { longitude: 2.350987, latitude: 48.856667, altitude: 0.0 };
-        let moscow = Location { longitude: 37.617634, latitude: 55.755787, altitude: 0.0 };
+        let paris = Location {
+            longitude: 2.350987,
+            latitude: 48.856667,
+            altitude: 0.0,
+        };
+        let moscow = Location {
+            longitude: 37.617634,
+            latitude: 55.755787,
+            altitude: 0.0,
+        };
         let locations = vec![paris, moscow];
         let trace = build_trace(&locations);
         assert!(!trace.locations.is_empty());

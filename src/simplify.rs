@@ -26,11 +26,7 @@ fn triangle_area(side_a: f64, side_b: f64, side_c: f64) -> f64 {
 /// Uses 2-D haversine (ignores altitude) so simplification preserves horizontal
 /// path shape rather than being skewed by elevation noise.
 /// Distances are in km (same unit as `Location::calculate_distance_to`).
-pub fn perpendicular_distance(
-    point: &Location,
-    line_start: &Location,
-    line_end: &Location,
-) -> f64 {
+pub fn perpendicular_distance(point: &Location, line_start: &Location, line_end: &Location) -> f64 {
     let line_dist = line_start.calculate_distance_to(line_end);
     if line_dist < 1e-6 {
         // Line is effectively a point — return distance to that point.
@@ -88,7 +84,11 @@ mod tests {
     use crate::Location;
 
     fn loc(lat: f64, lon: f64) -> Location {
-        Location { latitude: lat, longitude: lon, altitude: 0.0 }
+        Location {
+            latitude: lat,
+            longitude: lon,
+            altitude: 0.0,
+        }
     }
 
     #[test]

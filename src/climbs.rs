@@ -87,11 +87,18 @@ pub fn detect_climbs(
         let valley_elev = locations[valley_idx].altitude;
         let start_dist = cum_distances[valley_idx];
         let end_dist = cum_distances[peak_idx];
-        let climb_dist = if end_dist > start_dist { end_dist - start_dist } else { 0.0 };
+        let climb_dist = if end_dist > start_dist {
+            end_dist - start_dist
+        } else {
+            0.0
+        };
 
         let summit_elev = locations[peak_idx].altitude;
-        let elev_gain =
-            if summit_elev > valley_elev { summit_elev - valley_elev } else { 0.0 };
+        let elev_gain = if summit_elev > valley_elev {
+            summit_elev - valley_elev
+        } else {
+            0.0
+        };
 
         // grade % = (rise_m / run_m) × 100 — convert km → m in the denominator
         let avg_gradient = if climb_dist > 0.0 {
@@ -128,7 +135,11 @@ mod tests {
     use crate::Location;
 
     fn loc(lat: f64, alt: f64) -> Location {
-        Location { latitude: lat, longitude: 0.0, altitude: alt }
+        Location {
+            latitude: lat,
+            longitude: 0.0,
+            altitude: alt,
+        }
     }
 
     #[test]
@@ -197,22 +208,20 @@ mod tests {
         //   E: 0.7 km, 5%,  score=3.5 not > 3.5 → fails score
         //   F: 0.8 km, 6%,  score=4.8 > 3.5  ✓
         let pts = vec![
-            loc(0.0, 0.0),   //  0 valley
-            loc(0.1, 20.0),  //  1 peak A: 0.4 km, 20 m → 5%,  score=2.0
-            loc(0.2, 0.0),   //  2 valley
-            loc(0.3, 10.0),  //  3 peak B: 0.6 km, 10 m → 1.67%
-            loc(0.4, 0.0),   //  4 valley
-            loc(0.5, 15.0),  //  5 peak C: 0.5 km, 15 m → 3%
-            loc(0.6, 0.0),   //  6 valley
-            loc(0.7, 30.0),  //  7 peak D: 0.6 km, 30 m → 5%
-            loc(0.8, 0.0),   //  8 valley
-            loc(0.9, 35.0),  //  9 peak E: 0.7 km, 35 m → 5%
-            loc(1.0, 0.0),   // 10 valley
-            loc(1.1, 48.0),  // 11 peak F: 0.8 km, 48 m → 6%
+            loc(0.0, 0.0),  //  0 valley
+            loc(0.1, 20.0), //  1 peak A: 0.4 km, 20 m → 5%,  score=2.0
+            loc(0.2, 0.0),  //  2 valley
+            loc(0.3, 10.0), //  3 peak B: 0.6 km, 10 m → 1.67%
+            loc(0.4, 0.0),  //  4 valley
+            loc(0.5, 15.0), //  5 peak C: 0.5 km, 15 m → 3%
+            loc(0.6, 0.0),  //  6 valley
+            loc(0.7, 30.0), //  7 peak D: 0.6 km, 30 m → 5%
+            loc(0.8, 0.0),  //  8 valley
+            loc(0.9, 35.0), //  9 peak E: 0.7 km, 35 m → 5%
+            loc(1.0, 0.0),  // 10 valley
+            loc(1.1, 48.0), // 11 peak F: 0.8 km, 48 m → 6%
         ];
-        let dists = vec![
-            0.0, 0.4, 0.8, 1.4, 1.8, 2.3, 2.7, 3.3, 3.7, 4.4, 4.8, 5.6,
-        ];
+        let dists = vec![0.0, 0.4, 0.8, 1.4, 1.8, 2.3, 2.7, 3.3, 3.7, 4.4, 4.8, 5.6];
         let peaks = vec![1, 3, 5, 7, 9, 11];
         let valleys = vec![0, 2, 4, 6, 8, 10];
 

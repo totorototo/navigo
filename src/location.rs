@@ -136,7 +136,7 @@ mod tests {
 
         let is_in = paris.is_in_area(&area);
 
-        assert_eq!(is_in, false);
+        assert!(!is_in);
     }
 
     #[test]
@@ -155,7 +155,7 @@ mod tests {
         let radius = 70000.00;
         let is_in = location.is_in_radius(&center, &radius);
 
-        assert_eq!(is_in, true);
+        assert!(is_in);
     }
 
     #[test]

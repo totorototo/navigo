@@ -1,10 +1,10 @@
-/// AMPD (Automatic Multiscale-based Peak Detection) for elevation profiles.
-///
-/// At each scale `s` (1 … scale_max), a point is a local extremum if it is
-/// greater-than (peaks) or less-than (valleys) both neighbours at distance `s`.
-/// Counting across all scales gives a vote tally; points that exceed the
-/// `threshold` are extremum candidates.  Nearby candidates are clustered and
-/// kept only when their topographic prominence exceeds `MIN_PROMINENCE`.
+//! AMPD (Automatic Multiscale-based Peak Detection) for elevation profiles.
+//!
+//! At each scale `s` (1 … scale_max), a point is a local extremum if it is
+//! greater-than (peaks) or less-than (valleys) both neighbours at distance `s`.
+//! Counting across all scales gives a vote tally; points that exceed the
+//! `threshold` are extremum candidates.  Nearby candidates are clustered and
+//! kept only when their topographic prominence exceeds `MIN_PROMINENCE`.
 
 const AMPD_SCALE_MAX: usize = 21;
 const AMPD_THRESHOLD: usize = 15;
@@ -68,8 +68,11 @@ fn cluster_extrema(raw: &[usize], signal: &[f32], find_peaks: bool) -> Vec<usize
 
         if curr_idx - prev_idx <= CLUSTER_WINDOW {
             let curr_val = signal[curr_idx];
-            let better =
-                if find_peaks { curr_val > best_val } else { curr_val < best_val };
+            let better = if find_peaks {
+                curr_val > best_val
+            } else {
+                curr_val < best_val
+            };
             if better {
                 best_val = curr_val;
                 best_idx = curr_idx;
@@ -236,8 +239,9 @@ mod tests {
 
     #[test]
     fn peaks_and_valleys_are_symmetric_on_alternating_signal() {
-        let signal: Vec<f32> =
-            (0..30).map(|i| if i % 2 == 0 { 200.0 } else { 100.0 }).collect();
+        let signal: Vec<f32> = (0..30)
+            .map(|i| if i % 2 == 0 { 200.0 } else { 100.0 })
+            .collect();
         let raw_peaks = ampd_core(&signal, 2, 1, true);
         let raw_valleys = ampd_core(&signal, 2, 1, false);
         assert_eq!(raw_peaks.len(), raw_valleys.len());
