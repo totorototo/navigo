@@ -7,6 +7,8 @@
 
 simply manipulate GPS/geospatial data — in rust
 
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 # api / usage
 
 ## location
@@ -67,10 +69,13 @@ let is_in: bool = location.is_in_radius(&center, &70.0);
 - Peaks and valleys (AMPD algorithm with prominence filter)
 - Qualifying climb segments (Garmin-style thresholds)
 
+A `Trace` is never empty — construction fails with `TraceError::EmptyTrace`
+if `locations` is empty, so every other method can assume at least one point.
+
 ```rust
-let trace = Trace::new(&locations);
+let trace: Result<Trace, TraceError> = Trace::new(&locations);
 // or via the convenience wrapper:
-let trace = build_trace(&locations);
+let trace: Result<Trace, TraceError> = build_trace(&locations);
 ```
 
 ### precomputed fields
@@ -123,16 +128,16 @@ let (loc, idx, dist_km) = trace.find_closest_point(&target).unwrap();
 let result = trace.find_closest_point_from(&target, start_from);
 ```
 
-- **bounding box**:
+- **bounding box** (never fails — a trace always has at least one point):
 
 ```rust
-let area: Result<Area, &str> = trace.area();
+let area: Area = trace.area();
 ```
 
 - **sub-section by index range** (inclusive):
 
 ```rust
-let section: Result<Vec<Location>, &str> = trace.get_section(start_index, end_index);
+let section: Result<Vec<Location>, TraceError> = trace.get_section(start_index, end_index);
 ```
 
 ### climb stats
@@ -164,7 +169,7 @@ All data lives in WASM linear memory. The JS side holds a thin pointer (`WasmTra
 Only the boundaries cross the WASM↔JS membrane — scalars are free (registers), bulk arrays are copied once on demand.
 
 ```
-buildTrace(Float64Array)          ← one O(n) copy JS→WASM
+buildTrace(Float64Array)          ← one O(n) copy JS→WASM, null if no points
        │
        ▼
 WasmTrace stays in WASM memory
@@ -195,6 +200,7 @@ const pts = new Float64Array([
   37.617634, 55.755787, 200,
 ]);
 const trace = buildTrace(pts);
+// → WasmTrace, or null if pts carries no points
 
 // scalar getters — free
 trace.total_distance;           // number (km)
@@ -231,7 +237,7 @@ trace.get_section(startIndex, endIndex);
 // → Float64Array [lon,lat,alt,…] | null
 
 trace.area();
-// → { min_longitude, max_longitude, min_latitude, max_latitude } | null
+// → { min_longitude, max_longitude, min_latitude, max_latitude }
 
 trace.elevation();
 // → { positive, negative }  (raw, non-denoised)

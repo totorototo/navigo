@@ -6,7 +6,7 @@ use crate::elevation::{
 };
 use crate::extrema::{find_peaks, find_valleys};
 use crate::simplify::douglas_peucker_indices;
-use crate::{Elevation, Location};
+use crate::{Elevation, Location, TraceError};
 
 const DP_EPSILON_KM: f64 = 0.015;
 const DP_THRESHOLD: usize = 1000;
@@ -15,9 +15,14 @@ const LOCK_IN_KM: f64 = 1.0;
 /// Early-stop margin past the current best before giving up (km).
 const EARLY_STOP_KM: f64 = 2.0;
 
-#[derive(Debug)]
+/// A non-empty, precomputed GPS trace.
+///
+/// `Trace` is never empty — [`Trace::new`] rejects empty input — so every
+/// method below can assume `locations` has at least one element instead of
+/// special-casing it.
+#[derive(Debug, PartialEq)]
 pub struct Trace {
-    /// Possibly D-P simplified locations (owned).
+    /// Possibly D-P simplified locations (owned). Never empty.
     pub locations: Vec<Location>,
     /// Cumulative haversine distance from start, km.  `[0] == 0.0`.
     pub cumulative_distances: Vec<f64>,
@@ -39,21 +44,11 @@ pub struct Trace {
 }
 
 impl Trace {
-    pub fn new(raw: &[Location]) -> Self {
+    /// Builds a trace from raw locations. Fails with [`TraceError::EmptyTrace`]
+    /// if `raw` is empty — a `Trace` is never empty once constructed.
+    pub fn new(raw: &[Location]) -> Result<Self, TraceError> {
         if raw.is_empty() {
-            return Trace {
-                locations: vec![],
-                cumulative_distances: vec![],
-                cumulative_elevation_gains: vec![],
-                cumulative_elevation_losses: vec![],
-                slopes: vec![],
-                peaks: vec![],
-                valleys: vec![],
-                climbs: vec![],
-                total_distance: 0.0,
-                total_elevation_gain: 0.0,
-                total_elevation_loss: 0.0,
-            };
+            return Err(TraceError::EmptyTrace);
         }
 
         let n = raw.len();
@@ -68,7 +63,9 @@ impl Trace {
         };
 
         let cumulative_distances = cumulative_horizontal_distances(&locations);
-        let total_distance = *cumulative_distances.last().unwrap_or(&0.0);
+        let total_distance = *cumulative_distances
+            .last()
+            .expect("locations is non-empty, so cumulative_distances has at least one element");
 
         // Denoised elevation computed on the full-resolution raw signal.
         let gain_loss = compute_gain_loss(raw, ELEV_MEDIAN_RADIUS_KM, ELEV_NOISE_THRESHOLD_M);
@@ -99,7 +96,7 @@ impl Trace {
 
         let climbs = detect_climbs(&peaks, &valleys, &locations, &cumulative_distances);
 
-        Trace {
+        Ok(Trace {
             locations,
             cumulative_distances,
             cumulative_elevation_gains,
@@ -111,23 +108,20 @@ impl Trace {
             total_distance,
             total_elevation_gain: gain_loss.total_gain,
             total_elevation_loss: gain_loss.total_loss,
-        }
+        })
     }
 
     // ── Distance helpers ──────────────────────────────────────────────────────
 
     /// Index of the first location at or beyond `dist_km` (binary search).
     pub fn index_at_distance(&self, dist_km: f64) -> usize {
-        if self.cumulative_distances.is_empty() {
-            return 0;
-        }
         let pos = self.cumulative_distances.partition_point(|&d| d < dist_km);
         pos.min(self.locations.len() - 1)
     }
 
-    /// Location at cumulative distance `dist_km`, or `None` if negative / empty.
+    /// Location at cumulative distance `dist_km`, or `None` if negative.
     pub fn point_at_distance(&self, dist_km: f64) -> Option<&Location> {
-        if dist_km < 0.0 || self.locations.is_empty() {
+        if dist_km < 0.0 {
             return None;
         }
         self.locations.get(self.index_at_distance(dist_km))
@@ -135,7 +129,7 @@ impl Trace {
 
     /// Slice of locations between two cumulative distances (both ends inclusive).
     pub fn slice_between_distances(&self, start_km: f64, end_km: f64) -> Option<&[Location]> {
-        if self.locations.is_empty() || start_km < 0.0 || end_km < 0.0 || start_km > end_km {
+        if start_km < 0.0 || end_km < 0.0 || start_km > end_km {
             return None;
         }
         let start_idx = self.index_at_distance(start_km);
@@ -164,7 +158,7 @@ impl Trace {
         target: &Location,
         start_from: usize,
     ) -> Option<(&Location, usize, f64)> {
-        if self.locations.is_empty() || start_from >= self.locations.len() {
+        if start_from >= self.locations.len() {
             return None;
         }
         let mut best_dist = f64::INFINITY;
@@ -189,10 +183,14 @@ impl Trace {
         self.total_distance
     }
 
-    /// Bounding box of all locations.
-    pub fn area(&self) -> Result<Area, &str> {
-        let first = self.locations.first().ok_or("could not compute area")?;
-        let area = self.locations.iter().fold(
+    /// Bounding box of all locations. Never fails — a `Trace` always has at
+    /// least one location.
+    pub fn area(&self) -> Area {
+        let first = self
+            .locations
+            .first()
+            .expect("Trace is never empty by construction");
+        self.locations.iter().fold(
             Area {
                 min_longitude: first.longitude,
                 max_longitude: first.longitude,
@@ -205,8 +203,7 @@ impl Trace {
                 min_longitude: acc.min_longitude.min(loc.longitude),
                 max_longitude: acc.max_longitude.max(loc.longitude),
             },
-        );
-        Ok(area)
+        )
     }
 
     /// Raw (non-denoised) elevation gain/loss over the working locations.
@@ -233,15 +230,22 @@ impl Trace {
     }
 
     /// Sub-slice by index range (both ends inclusive).
-    pub fn get_section(&self, start_index: usize, end_index: usize) -> Result<Vec<Location>, &str> {
-        if self.locations.is_empty() {
-            return Err("could not compute section");
-        }
+    pub fn get_section(
+        &self,
+        start_index: usize,
+        end_index: usize,
+    ) -> Result<Vec<Location>, TraceError> {
         if start_index >= end_index {
-            return Err("start_index must be smaller than end_index");
+            return Err(TraceError::InvalidRange {
+                start_index,
+                end_index,
+            });
         }
         if end_index >= self.locations.len() {
-            return Err("index out of bounds");
+            return Err(TraceError::IndexOutOfBounds {
+                index: end_index,
+                len: self.locations.len(),
+            });
         }
         Ok(self.locations[start_index..=end_index].to_vec())
     }
@@ -255,14 +259,8 @@ mod tests {
     // ── Construction ──────────────────────────────────────────────────────────
 
     #[test]
-    fn empty_trace() {
-        let trace = Trace::new(&[]);
-        assert!(trace.locations.is_empty());
-        assert_eq!(trace.total_distance, 0.0);
-        assert_eq!(trace.total_elevation_gain, 0.0);
-        assert_eq!(trace.total_elevation_loss, 0.0);
-        assert!(trace.point_at_distance(0.0).is_none());
-        assert!(trace.slice_between_distances(0.0, 1.0).is_none());
+    fn empty_input_is_rejected() {
+        assert_eq!(Trace::new(&[]), Err(TraceError::EmptyTrace));
     }
 
     #[test]
@@ -272,7 +270,7 @@ mod tests {
             latitude: 0.0,
             altitude: 100.0,
         };
-        let trace = Trace::new(&[loc]);
+        let trace = Trace::new(&[loc]).unwrap();
         assert_eq!(trace.locations.len(), 1);
         assert_eq!(trace.total_distance, 0.0);
     }
@@ -289,7 +287,7 @@ mod tests {
             latitude: 55.755787,
             altitude: 0.0,
         };
-        let trace = Trace::new(&[paris, moscow]);
+        let trace = Trace::new(&[paris, moscow]).unwrap();
         let len = trace.length();
         assert!((len - 2486.340992526076).abs() < 1e-6);
     }
@@ -297,7 +295,7 @@ mod tests {
     #[test]
     fn full_dataset_builds_successfully() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert!(!trace.locations.is_empty());
         assert!(trace.total_distance > 0.0);
         assert_eq!(trace.cumulative_distances.len(), trace.locations.len());
@@ -317,7 +315,7 @@ mod tests {
     #[test]
     fn cumulative_distances_start_zero_and_non_decreasing() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert_eq!(trace.cumulative_distances[0], 0.0);
         for i in 1..trace.cumulative_distances.len() {
             assert!(trace.cumulative_distances[i] >= trace.cumulative_distances[i - 1]);
@@ -327,7 +325,7 @@ mod tests {
     #[test]
     fn total_elevation_gain_and_loss_non_negative() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert!(trace.total_elevation_gain >= 0.0);
         assert!(trace.total_elevation_loss >= 0.0);
     }
@@ -337,14 +335,14 @@ mod tests {
     #[test]
     fn point_at_distance_negative_returns_none() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert!(trace.point_at_distance(-1.0).is_none());
     }
 
     #[test]
     fn point_at_distance_zero_returns_first() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let pt = trace.point_at_distance(0.0).unwrap();
         assert_eq!(pt, &trace.locations[0]);
     }
@@ -352,7 +350,7 @@ mod tests {
     #[test]
     fn point_at_distance_beyond_end_returns_last() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let pt = trace.point_at_distance(1_000_000.0).unwrap();
         assert_eq!(pt, trace.locations.last().unwrap());
     }
@@ -362,7 +360,7 @@ mod tests {
     #[test]
     fn slice_full_range_covers_all_locations() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let slice = trace
             .slice_between_distances(0.0, trace.total_distance)
             .unwrap();
@@ -372,7 +370,7 @@ mod tests {
     #[test]
     fn slice_invalid_range_returns_none() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert!(trace.slice_between_distances(10.0, 5.0).is_none());
         assert!(trace.slice_between_distances(-1.0, 5.0).is_none());
     }
@@ -382,14 +380,14 @@ mod tests {
     #[test]
     fn index_at_distance_zero_is_zero() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         assert_eq!(trace.index_at_distance(0.0), 0);
     }
 
     #[test]
     fn index_at_distance_end_is_last() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let last = trace.locations.len() - 1;
         assert_eq!(trace.index_at_distance(trace.total_distance), last);
     }
@@ -397,20 +395,9 @@ mod tests {
     // ── find_closest_point ────────────────────────────────────────────────────
 
     #[test]
-    fn find_closest_point_on_empty_returns_none() {
-        let trace = Trace::new(&[]);
-        let target = Location {
-            longitude: 0.0,
-            latitude: 0.0,
-            altitude: 0.0,
-        };
-        assert!(trace.find_closest_point(&target).is_none());
-    }
-
-    #[test]
     fn find_closest_point_exact_match() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let target = &trace.locations[0];
         let (_, idx, dist) = trace.find_closest_point(target).unwrap();
         assert_eq!(idx, 0);
@@ -429,7 +416,7 @@ mod tests {
             latitude: 55.755787,
             altitude: 0.0,
         };
-        let trace = Trace::new(&[paris, moscow]);
+        let trace = Trace::new(&[paris, moscow]).unwrap();
         let near_paris = Location {
             longitude: 1.350987,
             latitude: 49.856667,
@@ -440,12 +427,6 @@ mod tests {
     }
 
     // ── area ──────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn area_empty_trace_returns_error() {
-        let trace = Trace::new(&[]);
-        assert!(trace.area().is_err());
-    }
 
     #[test]
     fn area_paris_to_moscow() {
@@ -459,8 +440,8 @@ mod tests {
             latitude: 55.755787,
             altitude: 0.0,
         };
-        let trace = Trace::new(&[paris, moscow]);
-        let area = trace.area().unwrap();
+        let trace = Trace::new(&[paris, moscow]).unwrap();
+        let area = trace.area();
         assert_eq!(area.min_longitude, 2.350987);
         assert_eq!(area.max_longitude, 37.617634);
         assert_eq!(area.min_latitude, 48.856667);
@@ -488,18 +469,10 @@ mod tests {
                 altitude: 120.0,
             },
         ];
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let elevation = trace.elevation();
         assert_eq!(elevation.positive, 50.0);
         assert_eq!(elevation.negative, 30.0);
-    }
-
-    #[test]
-    fn elevation_on_empty_trace_is_zero() {
-        let trace = Trace::new(&[]);
-        let elevation = trace.elevation();
-        assert_eq!(elevation.positive, 0.0);
-        assert_eq!(elevation.negative, 0.0);
     }
 
     // ── get_section ───────────────────────────────────────────────────────────
@@ -507,38 +480,39 @@ mod tests {
     #[test]
     fn get_section_returns_sub_slice() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let section = trace.get_section(1, 3).unwrap();
         assert_eq!(section, trace.locations[1..=3].to_vec());
     }
 
     #[test]
-    fn get_section_on_empty_trace_errs() {
-        let trace = Trace::new(&[]);
-        assert!(trace.get_section(0, 1).is_err());
-    }
-
-    #[test]
     fn get_section_start_not_smaller_than_end_errs() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
-        assert!(trace.get_section(2, 2).is_err());
-        assert!(trace.get_section(3, 1).is_err());
+        let trace = Trace::new(&locations).unwrap();
+        assert_eq!(
+            trace.get_section(2, 2),
+            Err(TraceError::InvalidRange {
+                start_index: 2,
+                end_index: 2
+            })
+        );
+        assert_eq!(
+            trace.get_section(3, 1),
+            Err(TraceError::InvalidRange {
+                start_index: 3,
+                end_index: 1
+            })
+        );
     }
 
     #[test]
     fn get_section_out_of_bounds_errs() {
         let locations = helper::get_locations();
-        let trace = Trace::new(&locations);
+        let trace = Trace::new(&locations).unwrap();
         let len = trace.locations.len();
-        assert!(trace.get_section(0, len).is_err());
-    }
-
-    // ── index_at_distance / slice_between_distances on empty trace ───────────
-
-    #[test]
-    fn index_at_distance_on_empty_trace_is_zero() {
-        let trace = Trace::new(&[]);
-        assert_eq!(trace.index_at_distance(5.0), 0);
+        assert_eq!(
+            trace.get_section(0, len),
+            Err(TraceError::IndexOutOfBounds { index: len, len })
+        );
     }
 }

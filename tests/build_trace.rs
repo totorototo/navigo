@@ -13,8 +13,13 @@ fn should_build_trace() {
         altitude: 0.0,
     };
     let locations = vec![paris, moscow];
-    let trace = build_trace(&locations);
+    let trace = build_trace(&locations).unwrap();
 
     assert!(!trace.locations.is_empty());
     assert!((trace.length() - 2486.340992526076).abs() < 1e-6);
+}
+
+#[test]
+fn build_trace_rejects_empty_input() {
+    assert!(build_trace(&[]).is_err());
 }

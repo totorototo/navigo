@@ -9,9 +9,10 @@ use crate::{build_trace as core_build_trace, Location};
 ///
 /// Data is copied from JS memory into WASM once here; all subsequent work
 /// stays inside WASM.  Returns a `WasmTrace` class instance whose methods can
-/// be called with near-zero boundary overhead.
+/// be called with near-zero boundary overhead, or `null` if `flat` carries no
+/// points.
 #[wasm_bindgen(js_name = "buildTrace")]
-pub fn build_trace(flat: &[f64]) -> WasmTrace {
+pub fn build_trace(flat: &[f64]) -> Option<WasmTrace> {
     let locations: Vec<Location> = flat
         .chunks_exact(3)
         .map(|c| Location {
@@ -20,9 +21,9 @@ pub fn build_trace(flat: &[f64]) -> WasmTrace {
             altitude: c[2],
         })
         .collect();
-    WasmTrace {
-        inner: core_build_trace(&locations),
-    }
+    core_build_trace(&locations)
+        .ok()
+        .map(|inner| WasmTrace { inner })
 }
 
 // ── WasmTrace class ───────────────────────────────────────────────────────────
@@ -177,12 +178,9 @@ impl WasmTrace {
         }
     }
 
-    /// Returns `{ min_longitude, max_longitude, min_latitude, max_latitude }` or `null`.
+    /// Returns `{ min_longitude, max_longitude, min_latitude, max_latitude }`.
     pub fn area(&self) -> JsValue {
-        match self.inner.area() {
-            Ok(a) => serde_wasm_bindgen::to_value(&a).unwrap_or(JsValue::NULL),
-            Err(_) => JsValue::NULL,
-        }
+        serde_wasm_bindgen::to_value(&self.inner.area()).unwrap_or(JsValue::NULL)
     }
 
     /// Returns `{ positive, negative }` (raw, non-denoised elevation totals).
