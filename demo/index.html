@@ -3,209 +3,302 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>navigo · WASM demo</title>
+  <title>NAVIGO</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f172a;
-      --surface:   #1e293b;
-      --border:    #334155;
-      --text:      #f1f5f9;
-      --muted:     #94a3b8;
-      --accent:    #818cf8;
-      --font:      system-ui, -apple-system, sans-serif;
+      --black:  #000;
+      --white:  #fff;
+      --yellow: #ffe000;
+      --red:    #ff2800;
+      --bg:     #f0ede6;
+      --b:      3px solid #000;
+      --sh:     5px 5px 0 #000;
     }
 
     body {
       background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      min-height: 100vh;
-      padding: 2rem 1rem;
+      color: var(--black);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
     }
 
-    .container { max-width: 860px; margin: 0 auto; }
+    /* ── HEADER ─────────────────────────────────────────────────────── */
+    header {
+      border: var(--b);
+      background: var(--black);
+      color: var(--yellow);
+      padding: 1.5rem 2rem;
+      margin-bottom: 0;
+      position: relative;
+    }
 
-    /* ── Header ── */
-    header { margin-bottom: 2rem; }
-    header h1 { font-size: 1.75rem; font-weight: 700; color: var(--accent); }
-    header p  { color: var(--muted); margin-top: .25rem; font-size: .9rem; }
-    header .badge {
-      display: inline-block;
-      margin-top: .5rem;
-      background: #312e81;
-      color: #a5b4fc;
+    header h1 {
+      font-family: Impact, 'Arial Black', sans-serif;
+      font-size: clamp(3rem, 10vw, 6rem);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    header .sub {
       font-size: .75rem;
-      padding: .2rem .55rem;
-      border-radius: 999px;
-      font-weight: 600;
-      letter-spacing: .04em;
+      letter-spacing: .25em;
+      text-transform: uppercase;
+      color: #888;
+      margin-top: .4rem;
     }
 
-    /* ── Stats grid ── */
+    header .tag {
+      position: absolute;
+      top: 1rem;
+      right: 1.25rem;
+      border: 2px solid var(--yellow);
+      color: var(--yellow);
+      font-size: .65rem;
+      letter-spacing: .2em;
+      padding: .2rem .5rem;
+      text-transform: uppercase;
+    }
+
+    /* ── STATS ──────────────────────────────────────────────────────── */
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: .75rem;
-      margin-bottom: 1.5rem;
+      grid-template-columns: repeat(5, 1fr);
+      border-left: var(--b);
+      border-bottom: var(--b);
+      border-right: var(--b);
+      background: var(--white);
+      margin-bottom: 2rem;
     }
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: .75rem;
-      padding: 1rem;
-    }
-    .stat-card .label {
-      font-size: .7rem;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--muted);
-      margin-bottom: .35rem;
-    }
-    .stat-card .value {
-      font-size: 1.4rem;
-      font-weight: 700;
-    }
-    .stat-card.wide { grid-column: 1 / -1; }
-    .stat-card.wide .value { font-size: 1rem; font-weight: 400; color: var(--muted); }
 
-    /* ── Profile canvas ── */
-    .section { margin-bottom: 1.75rem; }
-    .section h2 {
-      font-size: .75rem;
+    .stat-card {
+      padding: 1.1rem 1rem .9rem;
+      border-right: var(--b);
+    }
+
+    .stat-card:last-child { border-right: none; }
+
+    .stat-card:first-child { background: var(--yellow); }
+
+    .stat-card .label {
+      font-size: .6rem;
+      letter-spacing: .18em;
       text-transform: uppercase;
-      letter-spacing: .08em;
-      color: var(--muted);
-      margin-bottom: .75rem;
+      color: #555;
+      margin-bottom: .3rem;
     }
+
+    .stat-card:first-child .label { color: #555; }
+
+    .stat-card .value {
+      font-family: Impact, 'Arial Black', sans-serif;
+      font-size: 2.1rem;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -.02em;
+    }
+
+    .bbox-row {
+      border-left: var(--b);
+      border-right: var(--b);
+      border-bottom: var(--b);
+      background: var(--white);
+      padding: .5rem 1rem;
+      font-size: .7rem;
+      letter-spacing: .05em;
+      color: #555;
+      margin-bottom: 2rem;
+      margin-top: -2rem; /* flush under stats */
+    }
+
+    /* ── SECTION TITLES ─────────────────────────────────────────────── */
+    .section-title {
+      font-size: .65rem;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      background: var(--black);
+      color: var(--white);
+      display: inline-block;
+      padding: .25rem .7rem;
+      margin-bottom: 0;
+    }
+
+    /* ── CANVAS ─────────────────────────────────────────────────────── */
     .canvas-wrap {
-      border: 1px solid var(--border);
-      border-radius: .75rem;
-      overflow: hidden;
+      border: var(--b);
+      background: var(--white);
+      margin-bottom: .5rem;
     }
+
     canvas { display: block; }
 
     .legend {
       display: flex;
-      gap: 1.25rem;
-      margin-top: .6rem;
-      font-size: .75rem;
-      color: var(--muted);
+      gap: 1.5rem;
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #555;
+      margin-bottom: 2rem;
+      padding: .4rem 0;
+      border-bottom: 1px solid #ccc;
     }
-    .legend span::before {
-      content: '●';
-      margin-right: .3em;
-    }
-    .legend .peak   { color: #f87171; }
-    .legend .valley { color: #60a5fa; }
-    .legend .climb  { color: #818cf8; }
 
-    /* ── Climbs list ── */
-    #climbs-list { display: flex; flex-direction: column; gap: .65rem; }
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--black);
+      margin-right: .3em;
+      vertical-align: middle;
+    }
+
+    .legend-dot.peak   { background: var(--red); }
+    .legend-dot.valley { background: var(--white); }
+    .legend-dot.climb  { background: var(--yellow); }
+
+    /* ── CLIMBS ─────────────────────────────────────────────────────── */
+    #climbs-list { margin-bottom: 3rem; }
 
     .climb-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: .75rem;
-      padding: .85rem 1rem;
+      border: var(--b);
+      border-top: none;
+      background: var(--white);
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      align-items: stretch;
+    }
+
+    .climb-card:first-child { border-top: var(--b); }
+
+    .climb-card:nth-child(odd) .climb-metrics { background: #f7f7f7; }
+
+    .climb-rank {
+      background: var(--black);
+      color: var(--yellow);
+      font-family: Impact, 'Arial Black', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 900;
       display: flex;
       align-items: center;
-      gap: 1.25rem;
+      justify-content: center;
+      border-right: var(--b);
+      padding: .75rem .5rem;
+      letter-spacing: -.02em;
+    }
+
+    .climb-metrics {
+      display: flex;
+      gap: 0;
       flex-wrap: wrap;
     }
-    .climb-rank { font-weight: 600; font-size: .85rem; min-width: 80px; }
-    .climb-metrics { display: flex; gap: .75rem; flex-wrap: wrap; }
+
     .metric {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid var(--border);
-      border-radius: .5rem;
-      padding: .35rem .65rem;
-      min-width: 56px;
+      padding: .6rem .9rem;
+      border-right: 1px solid #ddd;
+      min-width: 72px;
     }
+
+    .metric:last-child { border-right: none; }
+
     .metric .label {
-      font-size: .65rem;
+      font-size: .55rem;
+      letter-spacing: .18em;
       text-transform: uppercase;
-      letter-spacing: .07em;
-      color: var(--muted);
-      margin-bottom: .1rem;
+      color: #888;
+      display: block;
+      margin-bottom: .15rem;
     }
-    .metric:not(.label) { font-size: .9rem; font-weight: 600; }
 
-    .empty { color: var(--muted); font-size: .9rem; padding: .5rem 0; }
+    .metric .val {
+      font-family: Impact, 'Arial Black', sans-serif;
+      font-size: 1.15rem;
+      letter-spacing: -.01em;
+      font-weight: 900;
+    }
 
-    /* ── Footer ── */
+    .metric.score .val { color: var(--red); }
+
+    .empty {
+      border: var(--b);
+      padding: 1.5rem;
+      font-size: .8rem;
+      letter-spacing: .08em;
+      color: #888;
+      background: var(--white);
+    }
+
+    /* ── FOOTER ─────────────────────────────────────────────────────── */
     footer {
-      margin-top: 2.5rem;
-      font-size: .75rem;
-      color: var(--muted);
-      text-align: center;
+      border-top: var(--b);
+      padding-top: 1rem;
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #888;
+      display: flex;
+      justify-content: space-between;
     }
-    footer a { color: var(--accent); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
+
+    footer a { color: var(--black); }
   </style>
 </head>
 <body>
-  <div class="container">
 
-    <header>
-      <h1>navigo</h1>
-      <p>GPS / geospatial analysis — Rust compiled to WebAssembly</p>
-      <span class="badge">WASM demo</span>
-    </header>
+  <header>
+    <div class="tag">WASM / RUST</div>
+    <h1>Navigo</h1>
+    <div class="sub">GPS trace analysis &mdash; compiled to WebAssembly</div>
+  </header>
 
-    <div class="stats">
-      <div class="stat-card">
-        <div class="label">Distance</div>
-        <div class="value" id="stat-distance">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Elevation gain</div>
-        <div class="value" id="stat-gain">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Elevation loss</div>
-        <div class="value" id="stat-loss">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Locations</div>
-        <div class="value" id="stat-locations">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Climbs</div>
-        <div class="value" id="stat-climbs">—</div>
-      </div>
-      <div class="stat-card wide">
-        <div class="label">Bounding box</div>
-        <div class="value" id="stat-bbox">—</div>
-      </div>
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Distance</div>
+      <div class="value" id="stat-distance">—</div>
     </div>
-
-    <div class="section">
-      <h2>Elevation profile</h2>
-      <div class="canvas-wrap">
-        <canvas id="profile"></canvas>
-      </div>
-      <div class="legend">
-        <span class="peak">peak</span>
-        <span class="valley">valley</span>
-        <span class="climb">shaded bands = detected climbs</span>
-      </div>
+    <div class="stat-card">
+      <div class="label">Elev. gain</div>
+      <div class="value" id="stat-gain">—</div>
     </div>
-
-    <div class="section">
-      <h2>Detected climbs</h2>
-      <div id="climbs-list"></div>
+    <div class="stat-card">
+      <div class="label">Elev. loss</div>
+      <div class="value" id="stat-loss">—</div>
     </div>
-
-    <footer>
-      <a href="https://github.com/totorototo/navigo" target="_blank">github.com/totorototo/navigo</a>
-    </footer>
-
+    <div class="stat-card">
+      <div class="label">Locations</div>
+      <div class="value" id="stat-locations">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Climbs</div>
+      <div class="value" id="stat-climbs">—</div>
+    </div>
   </div>
+
+  <div class="bbox-row" id="stat-bbox">&nbsp;</div>
+
+  <div class="section-title">Elevation profile</div>
+  <div class="canvas-wrap">
+    <canvas id="profile"></canvas>
+  </div>
+  <div class="legend">
+    <span><span class="legend-dot peak"></span>peak</span>
+    <span><span class="legend-dot valley"></span>valley</span>
+    <span><span class="legend-dot climb"></span>climb zone</span>
+  </div>
+
+  <div class="section-title">Detected climbs</div>
+  <div id="climbs-list"></div>
+
+  <footer>
+    <span>navigo &mdash; MIT license</span>
+    <a href="https://github.com/totorototo/navigo" target="_blank">github.com/totorototo/navigo</a>
+  </footer>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

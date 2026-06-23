@@ -55,10 +55,11 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
+
 function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   const DPR  = window.devicePixelRatio || 1;
   const W    = canvas.parentElement.clientWidth;
-  const H    = 240;
+  const H    = 260;
   canvas.style.width  = W + 'px';
   canvas.style.height = H + 'px';
   canvas.width  = W * DPR;
@@ -67,7 +68,7 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   const ctx = canvas.getContext('2d');
   ctx.scale(DPR, DPR);
 
-  const PAD = { top: 16, right: 16, bottom: 36, left: 56 };
+  const PAD = { top: 20, right: 20, bottom: 40, left: 64 };
   const CW  = W - PAD.left - PAD.right;
   const CH  = H - PAD.top  - PAD.bottom;
 
@@ -82,110 +83,98 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   const xP = d => PAD.left + (d / maxDist) * CW;
   const yP = a => PAD.top  + (1 - (a - minAlt) / (maxAlt - minAlt)) * CH;
 
-  // ── Background
-  ctx.fillStyle = '#111827';
+  // ── White background
+  ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
 
-  // ── Gridlines
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth   = 1;
-  const altStep   = 200;
-  for (let a = Math.ceil(minAlt / altStep) * altStep; a <= maxAlt; a += altStep) {
-    const y = yP(a);
-    if (y < PAD.top || y > H - PAD.bottom) continue;
-    ctx.beginPath();
-    ctx.moveTo(PAD.left, y);
-    ctx.lineTo(W - PAD.right, y);
-    ctx.stroke();
-  }
-
-  // ── Climb zones
-  const zoneColors = ['rgba(239,68,68,0.12)', 'rgba(245,158,11,0.12)', 'rgba(34,197,94,0.12)'];
-  climbs.forEach((c, i) => {
-    ctx.fillStyle = zoneColors[i % zoneColors.length];
+  // ── Yellow climb zones (behind everything)
+  climbs.forEach(c => {
+    ctx.fillStyle = '#ffe000';
     const x1 = xP(c.start_dist_km);
     const x2 = xP(c.start_dist_km + c.climb_dist_km);
     ctx.fillRect(x1, PAD.top, x2 - x1, CH);
   });
 
-  // ── Elevation fill
-  const grad = ctx.createLinearGradient(0, PAD.top, 0, H - PAD.bottom);
-  grad.addColorStop(0,   'rgba(99,102,241,0.55)');
-  grad.addColorStop(1,   'rgba(99,102,241,0.04)');
+  // ── Horizontal gridlines
+  const altStep = 200;
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth   = 1;
+  for (let a = Math.ceil(minAlt / altStep) * altStep; a <= maxAlt; a += altStep) {
+    const y = yP(a);
+    if (y < PAD.top || y > H - PAD.bottom) continue;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+  }
 
+  // ── Solid black elevation fill
   ctx.beginPath();
   ctx.moveTo(xP(dists[0]), yP(alts[0]));
   for (let i = 1; i < dists.length; i++) ctx.lineTo(xP(dists[i]), yP(alts[i]));
   ctx.lineTo(xP(maxDist), H - PAD.bottom);
   ctx.lineTo(xP(0),       H - PAD.bottom);
   ctx.closePath();
-  ctx.fillStyle = grad;
+  ctx.fillStyle = '#000';
   ctx.fill();
 
-  // ── Elevation line
-  ctx.beginPath();
-  ctx.moveTo(xP(dists[0]), yP(alts[0]));
-  for (let i = 1; i < dists.length; i++) ctx.lineTo(xP(dists[i]), yP(alts[i]));
-  ctx.strokeStyle = '#818cf8';
-  ctx.lineWidth   = 2;
-  ctx.lineJoin    = 'round';
-  ctx.stroke();
-
-  // ── Valley dots
+  // ── Valley dots (white circle, black outline)
   Array.from(valleys).forEach(idx => {
-    dot(ctx, xP(dists[idx]), yP(alts[idx]), '#60a5fa', 4);
+    ctx.beginPath();
+    ctx.arc(xP(dists[idx]), yP(alts[idx]), 5, 0, Math.PI * 2);
+    ctx.fillStyle   = '#fff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth   = 2;
+    ctx.fill();
+    ctx.stroke();
   });
 
-  // ── Peak dots
+  // ── Peak dots (solid red)
   Array.from(peaks).forEach(idx => {
-    dot(ctx, xP(dists[idx]), yP(alts[idx]), '#f87171', 4);
+    ctx.beginPath();
+    ctx.arc(xP(dists[idx]), yP(alts[idx]), 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff2800';
+    ctx.fill();
   });
 
-  // ── Axes
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-  ctx.lineWidth   = 1;
+  // ── Axes (thick black)
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth   = 2;
   ctx.beginPath();
   ctx.moveTo(PAD.left, PAD.top);
   ctx.lineTo(PAD.left, H - PAD.bottom);
   ctx.lineTo(W - PAD.right, H - PAD.bottom);
   ctx.stroke();
 
-  // ── Y labels
-  ctx.fillStyle  = '#6b7280';
-  ctx.font       = '11px system-ui, sans-serif';
-  ctx.textAlign  = 'right';
+  // ── Y labels + ticks
+  ctx.fillStyle    = '#000';
+  ctx.font         = 'bold 10px Courier New, monospace';
+  ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
   for (let a = Math.ceil(minAlt / altStep) * altStep; a <= maxAlt; a += altStep) {
     const y = yP(a);
     if (y < PAD.top || y > H - PAD.bottom) continue;
-    ctx.fillText(a + ' m', PAD.left - 6, y);
+    ctx.fillText(a + 'm', PAD.left - 6, y);
+    ctx.beginPath(); ctx.moveTo(PAD.left - 4, y); ctx.lineTo(PAD.left, y);
+    ctx.lineWidth = 1.5; ctx.stroke();
   }
 
-  // ── X labels
-  ctx.textAlign   = 'center';
+  // ── X labels + ticks
+  ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  const distStep = 5;
-  for (let d = 0; d <= maxDist; d += distStep) {
-    ctx.fillText(d + ' km', xP(d), H - PAD.bottom + 6);
+  for (let d = 0; d <= maxDist; d += 5) {
+    const x = xP(d);
+    ctx.fillText(d + 'km', x, H - PAD.bottom + 6);
+    ctx.beginPath(); ctx.moveTo(x, H - PAD.bottom); ctx.lineTo(x, H - PAD.bottom + 4);
+    ctx.lineWidth = 1.5; ctx.stroke();
   }
 
-  // ── Climb number labels
-  ctx.textAlign  = 'center';
-  ctx.textBaseline = 'top';
-  const labelColors = ['#f87171', '#fbbf24', '#4ade80'];
-  climbs.forEach((c, i) => {
+  // ── Climb gradient labels (on the yellow bands, above the black fill)
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.font         = 'bold 10px Courier New, monospace';
+  climbs.forEach(c => {
     const midX = xP(c.start_dist_km + c.climb_dist_km / 2);
-    ctx.fillStyle = labelColors[i % labelColors.length];
-    ctx.font = 'bold 11px system-ui, sans-serif';
-    ctx.fillText(`↑ ${c.avg_gradient.toFixed(1)}%`, midX, PAD.top + 4);
+    ctx.fillStyle = '#000';
+    ctx.fillText(`↑ ${c.avg_gradient.toFixed(1)}%`, midX, H - PAD.bottom - 4);
   });
-}
-
-function dot(ctx, x, y, color, r) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
 }
 
 function renderClimbs(climbs) {
@@ -193,20 +182,34 @@ function renderClimbs(climbs) {
   if (!el) return;
 
   if (climbs.length === 0) {
-    el.innerHTML = '<p class="empty">No qualifying climbs detected.</p>';
+    el.innerHTML = '<p class="empty">NO QUALIFYING CLIMBS DETECTED.</p>';
     return;
   }
 
-  const icons = ['🔴', '🟡', '🟢'];
   el.innerHTML = climbs.map((c, i) => `
     <div class="climb-card">
-      <div class="climb-rank">${icons[i % icons.length]} Climb ${i + 1}</div>
+      <div class="climb-rank">#${String(i + 1).padStart(2, '0')}</div>
       <div class="climb-metrics">
-        <span class="metric"><span class="label">dist</span>${c.climb_dist_km.toFixed(1)} km</span>
-        <span class="metric"><span class="label">gain</span>+${Math.round(c.elevation_gain)} m</span>
-        <span class="metric"><span class="label">grade</span>${c.avg_gradient.toFixed(1)}%</span>
-        <span class="metric"><span class="label">summit</span>${Math.round(c.summit_elev)} m</span>
-        <span class="metric"><span class="label">score</span>${(c.climb_dist_km * c.avg_gradient).toFixed(0)}</span>
+        <div class="metric">
+          <span class="label">dist</span>
+          <span class="val">${c.climb_dist_km.toFixed(1)}<small>km</small></span>
+        </div>
+        <div class="metric">
+          <span class="label">gain</span>
+          <span class="val">+${Math.round(c.elevation_gain)}<small>m</small></span>
+        </div>
+        <div class="metric">
+          <span class="label">grade</span>
+          <span class="val">${c.avg_gradient.toFixed(1)}<small>%</small></span>
+        </div>
+        <div class="metric">
+          <span class="label">summit</span>
+          <span class="val">${Math.round(c.summit_elev)}<small>m</small></span>
+        </div>
+        <div class="metric score">
+          <span class="label">score</span>
+          <span class="val">${(c.climb_dist_km * c.avg_gradient).toFixed(0)}</span>
+        </div>
       </div>
     </div>
   `).join('');
