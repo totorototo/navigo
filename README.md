@@ -149,6 +149,108 @@ Climbs are qualified using Garmin Climb Pro thresholds:
 
 ---
 
+## WebAssembly
+
+The library can be compiled to WASM for use in web applications via the `wasm` feature.
+
+### how it works
+
+All data lives in WASM linear memory. The JS side holds a thin pointer (`WasmTrace`).
+Only the boundaries cross the WASM↔JS membrane — scalars are free (registers), bulk arrays are copied once on demand.
+
+```
+buildTrace(Float64Array)          ← one O(n) copy JS→WASM
+       │
+       ▼
+WasmTrace stays in WASM memory
+       │
+       ├── trace.total_distance        → free (register)
+       ├── trace.find_closest_point()  → free (scalars in/out)
+       ├── trace.locations_flat        → one O(n) copy, cache it
+       └── trace.free()               ← you must call this (no GC bridge)
+```
+
+### build
+
+```bash
+cargo install wasm-pack
+wasm-pack build --target web       # ES modules — Vite, plain browser
+wasm-pack build --target bundler   # webpack / Rollup
+```
+
+### usage
+
+```js
+import init, { buildTrace } from './navigo.js';
+await init();
+
+// build — one copy in, all computation in WASM
+const pts = new Float64Array([
+  2.350987, 48.856667, 0,     // lon, lat, alt
+  37.617634, 55.755787, 200,
+]);
+const trace = buildTrace(pts);
+
+// scalar getters — free
+trace.total_distance;           // number (km)
+trace.total_elevation_gain;     // number (m)
+trace.total_elevation_loss;     // number (m)
+trace.location_count;           // number
+
+// array getters — copy once, then cache on the JS side
+const locs    = trace.locations_flat;              // Float64Array [lon,lat,alt,…]
+const dists   = trace.cumulative_distances;        // Float64Array (km)
+const gains   = trace.cumulative_elevation_gains;  // Float64Array (m)
+const losses  = trace.cumulative_elevation_losses; // Float64Array (m)
+const slopes  = trace.slopes;                      // Float64Array (%)
+const peaks   = trace.peaks;                       // Uint32Array  (indices)
+const valleys = trace.valleys;                     // Uint32Array  (indices)
+
+// query methods — scalars in, one small object out
+trace.point_at_distance(42.0);
+// → { longitude, latitude, altitude } | null
+
+trace.index_at_distance(42.0);
+// → number
+
+trace.find_closest_point(lon, lat, alt);
+// → { location: { longitude, latitude, altitude }, index, distance } | null
+
+trace.find_closest_point_from(lon, lat, alt, lastIndex);
+// → same shape | null  (use on live-tracking loops)
+
+trace.slice_between_distances(10.0, 50.0);
+// → Float64Array [lon,lat,alt,…] | null
+
+trace.get_section(startIndex, endIndex);
+// → Float64Array [lon,lat,alt,…] | null
+
+trace.area();
+// → { min_longitude, max_longitude, min_latitude, max_latitude } | null
+
+trace.elevation();
+// → { positive, negative }  (raw, non-denoised)
+
+trace.climbs();
+// → [{ start_index, end_index, start_dist_km, climb_dist_km,
+//      elevation_gain, summit_elev, avg_gradient }, …]
+
+// always release when done — Rust allocator has no GC bridge
+trace.free();
+```
+
+### memory management
+
+`WasmTrace` lives in WASM linear memory. The JS object is just a pointer — Rust cannot reclaim it when the JS variable is GC'd. Always call `.free()`, or register a `FinalizationRegistry`:
+
+```js
+const registry = new FinalizationRegistry(t => t.free());
+const trace = buildTrace(pts);
+registry.register(trace, trace);
+```
+
+---
+
 ## license
 
 [MIT](LICENSE)

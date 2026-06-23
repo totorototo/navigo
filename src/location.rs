@@ -1,6 +1,7 @@
 use crate::{Area, Elevation};
 
 #[derive(PartialEq, Debug, Copy, Clone)]
+#[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct Location {
     pub longitude: f64,
     pub latitude: f64,

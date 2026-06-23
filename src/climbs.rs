@@ -13,6 +13,7 @@ const MIN_AVG_GRADIENT: f64 = 3.0; // %
 // ── Data types ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct ClimbStats {
     /// Index of the climb-start (valley) in the working-locations array.
     pub start_index: usize,

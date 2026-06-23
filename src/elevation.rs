@@ -9,6 +9,7 @@ const MAX_WINDOW_SAMPLES: usize = 256;
 // ── Public types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, PartialEq)]
+#[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct Elevation {
     pub positive: f64,
     pub negative: f64,

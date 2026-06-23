@@ -12,4 +12,16 @@ categories = ["science::geo", "algorithms"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+# cdylib  → WASM / C dynamic library (for wasm-pack)
+# rlib    → normal Rust crate (keeps `cargo test` and lib usage working)
+crate-type = ["cdylib", "rlib"]
+
+[features]
+wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen", "dep:js-sys"]
+
 [dependencies]
+wasm-bindgen      = { version = "0.2",  optional = true }
+serde             = { version = "1",    features = ["derive"], optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys            = { version = "0.3",  optional = true }
