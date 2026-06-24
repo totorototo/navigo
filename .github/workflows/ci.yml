@@ -123,3 +123,54 @@ jobs:
         run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: ci
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Update npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Build bundler target
+        run: wasm-pack build --target bundler --out-dir npm/bundler --out-name navigo -- --features wasm
+
+      - name: Build web target
+        run: wasm-pack build --target web --out-dir npm/web --out-name navigo -- --features wasm
+
+      - name: Remove wasm-pack scaffolding
+        run: rm -f npm/bundler/{package.json,.gitignore,README.md,LICENSE} npm/web/{package.json,.gitignore,README.md,LICENSE}
+
+      - name: Copy LICENSE
+        run: cp LICENSE npm/LICENSE
+
+      - name: Sync version with Cargo.toml
+        working-directory: npm
+        run: |
+          VERSION=$(grep -m1 '^version' ../Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          npm pkg set version="$VERSION"
+
+      - name: Publish
+        working-directory: npm
+        run: npm publish --access public

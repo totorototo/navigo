@@ -1,0 +1,30 @@
+{
+  "name": "@totorototo/navigo",
+  "version": "0.3.0",
+  "description": "Simply manipulate GPS/geospatial data — distances, elevation, simplification, climb detection. Compiled from Rust to WebAssembly.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/totorototo/navigo"
+  },
+  "keywords": ["gps", "geospatial", "navigation", "elevation", "trace", "wasm"],
+  "type": "module",
+  "main": "./bundler/navigo.js",
+  "types": "./bundler/navigo.d.ts",
+  "files": ["bundler", "web"],
+  "exports": {
+    ".": {
+      "types": "./bundler/navigo.d.ts",
+      "default": "./bundler/navigo.js"
+    },
+    "./web": {
+      "types": "./web/navigo.d.ts",
+      "default": "./web/navigo.js"
+    },
+    "./web/navigo_bg.wasm": "./web/navigo_bg.wasm"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

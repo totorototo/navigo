@@ -1,2 +1,5 @@
 /target
 Cargo.lock
+/npm/bundler
+/npm/web
+/npm/LICENSE

@@ -163,6 +163,7 @@ Climbs are qualified using Garmin Climb Pro thresholds:
 ## WebAssembly
 
 The library can be compiled to WASM for use in web applications via the `wasm` feature.
+Prebuilt bindings are published to npm as [`@totorototo/navigo`](https://www.npmjs.com/package/@totorototo/navigo) — `npm install @totorototo/navigo`.
 
 ### how it works
 
