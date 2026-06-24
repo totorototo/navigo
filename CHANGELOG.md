@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-24
+
+### Added
+
+- Published WASM bindings to npm as
+  [`@totorototo/navigo`](https://www.npmjs.com/package/@totorototo/navigo),
+  built for both the `bundler` (Vite/webpack, zero-config) and `web`
+  (plain ESM, manual `init()`) wasm-pack targets.
+- CI: tagged releases now publish to npm via Trusted Publishing (OIDC) —
+  no stored npm token — alongside the existing crates.io publish.
+
 ## [0.3.0] - 2026-06-23
 
 ### Changed

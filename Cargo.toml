@@ -1,6 +1,6 @@
 [package]
 name = "navigo"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Thomas <el.totorototo@gmail.com>"]
 edition = "2021"
 description = "Simply manipulate GPS/geospatial data in Rust — distances, elevation, simplification, climb detection."

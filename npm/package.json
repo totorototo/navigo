@@ -1,6 +1,6 @@
 {
   "name": "@totorototo/navigo",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Simply manipulate GPS/geospatial data — distances, elevation, simplification, climb detection. Compiled from Rust to WebAssembly.",
   "license": "MIT",
   "repository": {
