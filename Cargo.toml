@@ -18,10 +18,9 @@ categories = ["science::geo", "algorithms"]
 crate-type = ["cdylib", "rlib"]
 
 [features]
-wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen", "dep:js-sys"]
+wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen"]
 
 [dependencies]
 wasm-bindgen      = { version = "0.2",  optional = true }
 serde             = { version = "1",    features = ["derive"], optional = true }
 serde-wasm-bindgen = { version = "0.6", optional = true }
-js-sys            = { version = "0.3",  optional = true }

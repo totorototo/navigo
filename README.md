@@ -62,6 +62,7 @@ let is_in: bool = location.is_in_radius(&center, &70.0);
 ## trace
 
 `Trace::new` ingests raw GPS locations and precomputes everything in one shot:
+
 - Douglas-Peucker simplification (for traces > 1 000 points, ε = 15 m)
 - Cumulative distances
 - Denoised cumulative elevation gain / loss (median smoothing + hysteresis)
@@ -191,50 +192,54 @@ wasm-pack build --target bundler   # webpack / Rollup
 ### usage
 
 ```js
-import init, { buildTrace } from './navigo.js';
+import init, { buildTrace } from "./navigo.js";
 await init();
 
 // build — one copy in, all computation in WASM
 const pts = new Float64Array([
-  2.350987, 48.856667, 0,     // lon, lat, alt
-  37.617634, 55.755787, 200,
+  2.350987,
+  48.856667,
+  0, // lon, lat, alt
+  37.617634,
+  55.755787,
+  200,
 ]);
 const trace = buildTrace(pts);
 // → WasmTrace, or null if pts carries no points
 
 // scalar getters — free
-trace.total_distance;           // number (km)
-trace.total_elevation_gain;     // number (m)
-trace.total_elevation_loss;     // number (m)
-trace.location_count;           // number
+trace.total_distance; // number (km)
+trace.total_elevation_gain; // number (m)
+trace.total_elevation_loss; // number (m)
+trace.location_count; // number
 
 // array getters — copy once, then cache on the JS side
-const locs    = trace.locations_flat;              // Float64Array [lon,lat,alt,…]
-const dists   = trace.cumulative_distances;        // Float64Array (km)
-const gains   = trace.cumulative_elevation_gains;  // Float64Array (m)
-const losses  = trace.cumulative_elevation_losses; // Float64Array (m)
-const slopes  = trace.slopes;                      // Float64Array (%)
-const peaks   = trace.peaks;                       // Uint32Array  (indices)
-const valleys = trace.valleys;                     // Uint32Array  (indices)
+const locs = trace.locations_flat; // Float64Array [lon,lat,alt,…]
+const dists = trace.cumulative_distances; // Float64Array (km)
+const gains = trace.cumulative_elevation_gains; // Float64Array (m)
+const losses = trace.cumulative_elevation_losses; // Float64Array (m)
+const slopes = trace.slopes; // Float64Array (%)
+const peaks = trace.peaks; // Uint32Array  (indices)
+const valleys = trace.valleys; // Uint32Array  (indices)
 
 // query methods — scalars in, one small object out
 trace.point_at_distance(42.0);
-// → { longitude, latitude, altitude } | null
+// → { longitude, latitude, altitude } | undefined
 
 trace.index_at_distance(42.0);
 // → number
 
 trace.find_closest_point(lon, lat, alt);
-// → { location: { longitude, latitude, altitude }, index, distance } | null
+// → { location: { longitude, latitude, altitude }, index, distance } | undefined
 
 trace.find_closest_point_from(lon, lat, alt, lastIndex);
-// → same shape | null  (use on live-tracking loops)
+// → same shape | undefined  (use on live-tracking loops)
 
 trace.slice_between_distances(10.0, 50.0);
-// → Float64Array [lon,lat,alt,…] | null
+// → Float64Array [lon,lat,alt,…] | undefined
 
 trace.get_section(startIndex, endIndex);
-// → Float64Array [lon,lat,alt,…] | null
+// → Float64Array [lon,lat,alt,…]  (throws on out-of-bounds / invalid range)
 
 trace.area();
 // → { min_longitude, max_longitude, min_latitude, max_latitude }
@@ -255,7 +260,7 @@ trace.free();
 `WasmTrace` lives in WASM linear memory. The JS object is just a pointer — Rust cannot reclaim it when the JS variable is GC'd. Always call `.free()`, or register a `FinalizationRegistry`:
 
 ```js
-const registry = new FinalizationRegistry(t => t.free());
+const registry = new FinalizationRegistry((t) => t.free());
 const trace = buildTrace(pts);
 registry.register(trace, trace);
 ```
