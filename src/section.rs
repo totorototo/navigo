@@ -49,8 +49,10 @@ pub fn compute_from_waypoints(
     life_base_stop_s: u32,
     weather: &WeatherLookup,
 ) -> Option<Vec<SectionStats>> {
-    let section_wpts: Vec<&Waypoint> =
-        waypoints.iter().filter(|w| w.is_section_boundary()).collect();
+    let section_wpts: Vec<&Waypoint> = waypoints
+        .iter()
+        .filter(|w| w.is_section_boundary())
+        .collect();
     if section_wpts.len() < 2 {
         return None;
     }
@@ -101,8 +103,8 @@ pub fn compute_from_waypoints(
         }
 
         let bearing = start_target.calculate_bearing_to(&end_target);
-        let dist_km = trace.cumulative_distances[end_index]
-            - trace.cumulative_distances[start_index];
+        let dist_km =
+            trace.cumulative_distances[end_index] - trace.cumulative_distances[start_index];
         let elevation_gain_m = trace.cumulative_elevation_gains[end_index]
             - trace.cumulative_elevation_gains[start_index];
         let elevation_loss_m = trace.cumulative_elevation_losses[end_index]
@@ -199,7 +201,7 @@ pub fn compute_from_waypoints(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, DEFAULT_LIFE_BASE_STOP_S};
+    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, DEFAULT_LIFE_BASE_STOP_S, K_FATIGUE};
 
     fn make_trace(n: usize) -> Trace {
         let locs: Vec<Location> = (0..n)
@@ -405,11 +407,21 @@ mod tests {
             make_waypoint(0.009, "Arrival", Some("Arrival"), None),
         ];
         let sections_lb = compute_from_waypoints(
-            &trace, &wpts_lb, DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, 0, &empty_weather(),
+            &trace,
+            &wpts_lb,
+            DEFAULT_BASE_PACE_S_PER_KM,
+            K_FATIGUE,
+            0,
+            &empty_weather(),
         )
         .unwrap();
         let sections_tb = compute_from_waypoints(
-            &trace, &wpts_tb, DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, 0, &empty_weather(),
+            &trace,
+            &wpts_tb,
+            DEFAULT_BASE_PACE_S_PER_KM,
+            K_FATIGUE,
+            0,
+            &empty_weather(),
         )
         .unwrap();
         assert!(
@@ -440,15 +452,23 @@ mod tests {
             make_waypoint(0.004, "Arrival", Some("Arrival"), None),
         ];
         let day = compute_from_waypoints(
-            &trace, &wpts_day, DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, 0, &empty_weather(),
+            &trace,
+            &wpts_day,
+            DEFAULT_BASE_PACE_S_PER_KM,
+            K_FATIGUE,
+            0,
+            &empty_weather(),
         )
         .unwrap();
         let night_s = compute_from_waypoints(
-            &trace, &wpts_night, DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, 0, &empty_weather(),
+            &trace,
+            &wpts_night,
+            DEFAULT_BASE_PACE_S_PER_KM,
+            K_FATIGUE,
+            0,
+            &empty_weather(),
         )
         .unwrap();
         assert!(night_s[0].estimated_duration_s > day[0].estimated_duration_s);
     }
 }
-
-

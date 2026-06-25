@@ -12,21 +12,21 @@ mod location;
 pub mod minetti;
 pub mod pace_model;
 pub mod section;
-mod simplify;
 pub mod segment;
+mod simplify;
 pub mod stage;
-mod trace;
 pub mod time;
-pub mod waypoint;
+mod trace;
 #[cfg(feature = "wasm")]
 mod wasm;
+pub mod waypoint;
 
 pub use area::Area;
-pub use calibration::{BoundaryKind, Recalibration, RecalibratedEta};
+pub use calibration::{BoundaryKind, RecalibratedEta, Recalibration};
 pub use climbs::ClimbStats;
 pub use elevation::{Elevation, GainLoss};
 pub use error::TraceError;
-pub use gpx::{GpxMetadata, parse_trace_points, parse_waypoints, parse_metadata};
+pub use gpx::{parse_metadata, parse_trace_points, parse_waypoints, GpxMetadata};
 pub use leg::LegStats;
 pub use location::Location;
 pub use pace_model::{WeatherConditions, WeatherLookup};
@@ -34,9 +34,9 @@ pub use section::SectionStats;
 pub use stage::StageStats;
 pub use time::parse_iso8601_to_epoch;
 pub use trace::Trace;
-pub use waypoint::Waypoint;
 #[cfg(feature = "wasm")]
 pub use wasm::build_trace as build_wasm_trace;
+pub use waypoint::Waypoint;
 
 pub fn build_trace(locations: &[Location]) -> Result<Trace, TraceError> {
     Trace::new(locations)

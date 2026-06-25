@@ -39,10 +39,22 @@ pub fn parse_gpx_full(
     let weather = crate::pace_model::WeatherLookup::empty();
 
     let legs = crate::leg::compute_from_waypoints(&trace, &waypoints);
-    let sections =
-        crate::section::compute_from_waypoints(&trace, &waypoints, base_pace_s_per_km, k_fatigue, life_base_stop_s, &weather);
-    let stages =
-        crate::stage::compute_from_waypoints(&trace, &waypoints, base_pace_s_per_km, k_fatigue, life_base_stop_s, &weather);
+    let sections = crate::section::compute_from_waypoints(
+        &trace,
+        &waypoints,
+        base_pace_s_per_km,
+        k_fatigue,
+        life_base_stop_s,
+        &weather,
+    );
+    let stages = crate::stage::compute_from_waypoints(
+        &trace,
+        &waypoints,
+        base_pace_s_per_km,
+        k_fatigue,
+        life_base_stop_s,
+        &weather,
+    );
 
     let result = WasmGpxFull {
         trace: WasmTraceSummary {

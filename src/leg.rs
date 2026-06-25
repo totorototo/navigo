@@ -79,8 +79,8 @@ pub fn compute_from_waypoints(trace: &Trace, waypoints: &[Waypoint]) -> Vec<LegS
         }
 
         let bearing = start_target.calculate_bearing_to(&end_target);
-        let dist_km = trace.cumulative_distances[end_index]
-            - trace.cumulative_distances[start_index];
+        let dist_km =
+            trace.cumulative_distances[end_index] - trace.cumulative_distances[start_index];
         let elevation_gain_m = trace.cumulative_elevation_gains[end_index]
             - trace.cumulative_elevation_gains[start_index];
         let elevation_loss_m = trace.cumulative_elevation_losses[end_index]
@@ -181,7 +181,13 @@ mod tests {
     #[test]
     fn basic_two_legs() {
         let points: Vec<(f64, f64, f64)> = (0..11)
-            .map(|i| (i as f64 * 0.01, -122.0 + i as f64 * 0.01, 100.0 + i as f64 * 20.0))
+            .map(|i| {
+                (
+                    i as f64 * 0.01,
+                    -122.0 + i as f64 * 0.01,
+                    100.0 + i as f64 * 20.0,
+                )
+            })
             .collect();
         let trace = make_trace(&points);
         let waypoints = vec![
@@ -208,8 +214,7 @@ mod tests {
 
     #[test]
     fn difficulty_flat_is_one() {
-        let points: Vec<(f64, f64, f64)> =
-            (0..4).map(|i| (0.0, i as f64 * 0.001, 100.0)).collect();
+        let points: Vec<(f64, f64, f64)> = (0..4).map(|i| (0.0, i as f64 * 0.001, 100.0)).collect();
         let trace = make_trace(&points);
         let waypoints = vec![
             make_waypoint(0.0, 0.0, "Start", None),

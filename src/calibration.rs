@@ -129,10 +129,8 @@ pub fn recalibrate_from_current(
     weather: &WeatherLookup,
 ) -> Option<Recalibration> {
     // ── Resolve boundary waypoints onto trace index ranges ─────────────────────
-    let boundary_wpts: Vec<&Waypoint> = waypoints
-        .iter()
-        .filter(|w| is_boundary(w, &kind))
-        .collect();
+    let boundary_wpts: Vec<&Waypoint> =
+        waypoints.iter().filter(|w| is_boundary(w, &kind)).collect();
     if boundary_wpts.len() < 2 {
         return None;
     }
@@ -248,8 +246,7 @@ pub fn recalibrate_from_current(
     let mut cumulative = 0.0_f64;
 
     for (idx, rs) in resolved.iter().enumerate() {
-        let is_remaining =
-            idx > current_range || (idx == current_range && found_current);
+        let is_remaining = idx > current_range || (idx == current_range && found_current);
         let remaining = if is_remaining {
             let from = if idx == current_range && current_index > rs.start_index {
                 current_index
@@ -376,9 +373,7 @@ mod tests {
         assert_eq!(result.etas.len(), 4);
 
         let sum: f64 = result.etas.iter().map(|e| e.remaining_duration_s).sum();
-        assert!(
-            (sum - result.etas.last().unwrap().cumulative_remaining_s).abs() < 1e-6
-        );
+        assert!((sum - result.etas.last().unwrap().cumulative_remaining_s).abs() < 1e-6);
     }
 
     #[test]
@@ -436,9 +431,7 @@ mod tests {
         assert_eq!(result.etas[1].remaining_duration_s, 0.0);
         assert!(result.etas[2].remaining_duration_s > 0.0);
         assert!(result.etas[3].remaining_duration_s > 0.0);
-        assert!(
-            result.etas[3].cumulative_remaining_s > result.etas[2].cumulative_remaining_s
-        );
+        assert!(result.etas[3].cumulative_remaining_s > result.etas[2].cumulative_remaining_s);
     }
 
     #[test]
@@ -473,8 +466,8 @@ mod tests {
 
         // Stage 0 (Start→LB1) spans sections 0 + 1.
         let stage0 = as_stages.etas[0].remaining_duration_s;
-        let sec01 = as_sections.etas[0].remaining_duration_s
-            + as_sections.etas[1].remaining_duration_s;
+        let sec01 =
+            as_sections.etas[0].remaining_duration_s + as_sections.etas[1].remaining_duration_s;
         assert!((stage0 - sec01).abs() < 1e-6);
     }
 
@@ -517,9 +510,7 @@ mod tests {
         .unwrap();
 
         assert!(no_stop.calibration_factor > 1.0);
-        assert!(
-            (no_stop.calibration_factor - with_stop.calibration_factor).abs() < 1e-9
-        );
+        assert!((no_stop.calibration_factor - with_stop.calibration_factor).abs() < 1e-9);
     }
 
     #[test]

@@ -222,7 +222,14 @@ mod tests {
         let now_s = 3600.0;
         let wf = 1.05;
 
-        let f = compute_factors(slope_frac, d_eff_km, K_FATIGUE, Some(clock_start), now_s, wf);
+        let f = compute_factors(
+            slope_frac,
+            d_eff_km,
+            K_FATIGUE,
+            Some(clock_start),
+            now_s,
+            wf,
+        );
         let expected = minetti::pace_factor(slope_frac)
             * fatigue_factor(d_eff_km, K_FATIGUE)
             * circadian_factor(clock_start + now_s as i64)

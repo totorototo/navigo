@@ -24,9 +24,7 @@ fn find_byte_from(haystack: &[u8], from: usize, byte: u8) -> Option<usize> {
 /// of `tag_section[0]` inside the full `bytes` slice, which is needed to
 /// locate the closing quote in the correct position.
 fn parse_attr(bytes: &[u8], base: usize, tag_section: &[u8], attr: &[u8]) -> Option<f64> {
-    let attr_offset = tag_section
-        .windows(attr.len())
-        .position(|w| w == attr)?;
+    let attr_offset = tag_section.windows(attr.len()).position(|w| w == attr)?;
     let opening_quote_index = base + attr_offset + attr.len();
     let opening_quote = *bytes.get(opening_quote_index)?;
     let value_start = opening_quote_index + 1;
@@ -167,10 +165,9 @@ pub fn parse_metadata(bytes: &[u8]) -> GpxMetadata {
                 let value_start = metadata_start + desc_pos + 6;
                 if let Some(value_end) = find_from(bytes, value_start, b"</desc>") {
                     if value_end <= metadata_end {
-                        metadata.description =
-                            std::str::from_utf8(&bytes[value_start..value_end])
-                                .ok()
-                                .map(String::from);
+                        metadata.description = std::str::from_utf8(&bytes[value_start..value_end])
+                            .ok()
+                            .map(String::from);
                     }
                 }
             }
@@ -238,34 +235,64 @@ pub fn parse_waypoints(bytes: &[u8]) -> Vec<Waypoint> {
             None => continue,
         };
 
-        let elevation = parse_tag_content(bytes, content, content_start, wpt_end, b"<ele>", b"</ele>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .and_then(|s| s.parse::<f64>().ok());
+        let elevation =
+            parse_tag_content(bytes, content, content_start, wpt_end, b"<ele>", b"</ele>")
+                .and_then(|s| std::str::from_utf8(s).ok())
+                .and_then(|s| s.parse::<f64>().ok());
 
-        let name = parse_tag_content(bytes, content, content_start, wpt_end, b"<name>", b"</name>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .map(String::from)
-            .unwrap_or_default();
+        let name = parse_tag_content(
+            bytes,
+            content,
+            content_start,
+            wpt_end,
+            b"<name>",
+            b"</name>",
+        )
+        .and_then(|s| std::str::from_utf8(s).ok())
+        .map(String::from)
+        .unwrap_or_default();
 
-        let description = parse_tag_content(bytes, content, content_start, wpt_end, b"<desc>", b"</desc>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .map(String::from);
+        let description = parse_tag_content(
+            bytes,
+            content,
+            content_start,
+            wpt_end,
+            b"<desc>",
+            b"</desc>",
+        )
+        .and_then(|s| std::str::from_utf8(s).ok())
+        .map(String::from);
 
-        let comment = parse_tag_content(bytes, content, content_start, wpt_end, b"<cmt>", b"</cmt>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .map(String::from);
+        let comment =
+            parse_tag_content(bytes, content, content_start, wpt_end, b"<cmt>", b"</cmt>")
+                .and_then(|s| std::str::from_utf8(s).ok())
+                .map(String::from);
 
         let symbol = parse_tag_content(bytes, content, content_start, wpt_end, b"<sym>", b"</sym>")
             .and_then(|s| std::str::from_utf8(s).ok())
             .map(String::from);
 
-        let wpt_type = parse_tag_content(bytes, content, content_start, wpt_end, b"<type>", b"</type>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .map(String::from);
+        let wpt_type = parse_tag_content(
+            bytes,
+            content,
+            content_start,
+            wpt_end,
+            b"<type>",
+            b"</type>",
+        )
+        .and_then(|s| std::str::from_utf8(s).ok())
+        .map(String::from);
 
-        let time = parse_tag_content(bytes, content, content_start, wpt_end, b"<time>", b"</time>")
-            .and_then(|s| std::str::from_utf8(s).ok())
-            .and_then(|s| crate::time::parse_iso8601_to_epoch(s).ok());
+        let time = parse_tag_content(
+            bytes,
+            content,
+            content_start,
+            wpt_end,
+            b"<time>",
+            b"</time>",
+        )
+        .and_then(|s| std::str::from_utf8(s).ok())
+        .and_then(|s| crate::time::parse_iso8601_to_epoch(s).ok());
 
         let stop_duration = parse_tag_content(
             bytes,
@@ -347,7 +374,8 @@ mod tests {
 
     #[test]
     fn preserves_high_precision_coordinates() {
-        let gpx = b"<trkpt lat=\"37.123456789\" lon=\"-122.987654321\"><ele>123.456789</ele></trkpt>";
+        let gpx =
+            b"<trkpt lat=\"37.123456789\" lon=\"-122.987654321\"><ele>123.456789</ele></trkpt>";
         let locations = parse_trace_points(gpx);
         assert_eq!(locations.len(), 1);
         assert!((locations[0].latitude - 37.123456789).abs() < 1e-9);

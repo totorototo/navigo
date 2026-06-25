@@ -26,13 +26,7 @@ fn date_time_to_unix_seconds(
         y -= 1;
         m += 12;
     }
-    let days = 365 * y
-        + y / 4
-        - y / 100
-        + y / 400
-        + (153 * m - 457) / 5
-        + day as i64
-        - 719469;
+    let days = 365 * y + y / 4 - y / 100 + y / 400 + (153 * m - 457) / 5 + day as i64 - 719469;
     days * 86400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64
 }
 
@@ -87,7 +81,10 @@ mod tests {
 
     #[test]
     fn utc_timestamp() {
-        assert_eq!(parse_iso8601_to_epoch("2025-11-20T12:00:00Z").unwrap(), 1763640000);
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:00:00Z").unwrap(),
+            1763640000
+        );
     }
 
     #[test]

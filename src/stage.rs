@@ -45,8 +45,7 @@ pub fn compute_from_waypoints(
     life_base_stop_s: u32,
     weather: &WeatherLookup,
 ) -> Option<Vec<StageStats>> {
-    let stage_wpts: Vec<&Waypoint> =
-        waypoints.iter().filter(|w| w.is_stage_boundary()).collect();
+    let stage_wpts: Vec<&Waypoint> = waypoints.iter().filter(|w| w.is_stage_boundary()).collect();
     if stage_wpts.len() < 2 {
         return None;
     }
@@ -87,8 +86,8 @@ pub fn compute_from_waypoints(
         }
 
         let bearing = start_target.calculate_bearing_to(&end_target);
-        let dist_km = trace.cumulative_distances[end_index]
-            - trace.cumulative_distances[start_index];
+        let dist_km =
+            trace.cumulative_distances[end_index] - trace.cumulative_distances[start_index];
         let elevation_gain_m = trace.cumulative_elevation_gains[end_index]
             - trace.cumulative_elevation_gains[start_index];
         let elevation_loss_m = trace.cumulative_elevation_losses[end_index]
@@ -184,7 +183,7 @@ pub fn compute_from_waypoints(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE, DEFAULT_LIFE_BASE_STOP_S};
+    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, DEFAULT_LIFE_BASE_STOP_S, K_FATIGUE};
 
     fn make_trace(n: usize) -> Trace {
         let locs: Vec<Location> = (0..n)
@@ -362,6 +361,8 @@ mod tests {
         let diff = with_stop[0].estimated_duration_s - without_stop[0].estimated_duration_s;
         assert!((diff - stop_s as f64).abs() < 1.0);
         // Stage 1 is unaffected by LB stop.
-        assert!((with_stop[1].estimated_duration_s - without_stop[1].estimated_duration_s).abs() < 1.0);
+        assert!(
+            (with_stop[1].estimated_duration_s - without_stop[1].estimated_duration_s).abs() < 1.0
+        );
     }
 }

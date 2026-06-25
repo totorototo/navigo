@@ -50,8 +50,7 @@ pub fn compute(
 
         let slope_frac = trace.slopes[j] / 100.0;
         // cumulative_distances is in km; differences give km segments directly.
-        let seg_dist_km =
-            trace.cumulative_distances[j + 1] - trace.cumulative_distances[j];
+        let seg_dist_km = trace.cumulative_distances[j + 1] - trace.cumulative_distances[j];
 
         let factors = pace_model::compute_factors(
             slope_frac,
@@ -81,7 +80,7 @@ pub fn compute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pace_model::{WEATHER_NEUTRAL, weather_factor};
+    use crate::pace_model::{weather_factor, WEATHER_NEUTRAL};
     use crate::Location;
 
     fn flat_trace(n: usize) -> Trace {
@@ -216,11 +215,31 @@ mod tests {
 
         let mut d_d = 0.0;
         let mut e_d = 0.0;
-        let desc_m = compute(&descending, 0, last, 500.0, pace_model::K_FATIGUE, None, WEATHER_NEUTRAL, &mut d_d, &mut e_d);
+        let desc_m = compute(
+            &descending,
+            0,
+            last,
+            500.0,
+            pace_model::K_FATIGUE,
+            None,
+            WEATHER_NEUTRAL,
+            &mut d_d,
+            &mut e_d,
+        );
 
         let mut d_f = 0.0;
         let mut e_f = 0.0;
-        let flat_m = compute(&flat, 0, last, 500.0, pace_model::K_FATIGUE, None, WEATHER_NEUTRAL, &mut d_f, &mut e_f);
+        let flat_m = compute(
+            &flat,
+            0,
+            last,
+            500.0,
+            pace_model::K_FATIGUE,
+            None,
+            WEATHER_NEUTRAL,
+            &mut d_f,
+            &mut e_f,
+        );
 
         assert!(desc_m.total_time < flat_m.total_time);
     }
@@ -238,7 +257,17 @@ mod tests {
         let trace = Trace::new(&locs).unwrap();
         let mut d = 0.0;
         let mut e = 0.0;
-        let m = compute(&trace, 0, 3, 500.0, pace_model::K_FATIGUE, None, WEATHER_NEUTRAL, &mut d, &mut e);
+        let m = compute(
+            &trace,
+            0,
+            3,
+            500.0,
+            pace_model::K_FATIGUE,
+            None,
+            WEATHER_NEUTRAL,
+            &mut d,
+            &mut e,
+        );
         assert!(m.max_slope > 10.0);
         assert_eq!(m.min_elevation, 0.0);
         assert_eq!(m.max_elevation, 100.0); // index 2 is the last iterated (end exclusive)
