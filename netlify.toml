@@ -1,0 +1,4 @@
+# Deployment is handled by GitHub Actions (ci.yml deploy-demo job).
+# This file tells Netlify where the built assets live when deploying via CLI.
+[build]
+  publish = "demo/dist"
