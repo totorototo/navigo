@@ -5,11 +5,7 @@
 [![docs.rs](https://docs.rs/navigo/badge.svg)](https://docs.rs/navigo)
 [![License](https://img.shields.io/crates/l/navigo.svg)](LICENSE)
 
-simply manipulate GPS/geospatial data — in rust
-
-> **New in 0.4.0** — GPX parsing, Minetti pace model, race route analysis (legs / sections / stages), live recalibration, and `parseGpxFull` WASM binding.
-
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+GPS/geospatial analysis in Rust — trace processing, GPX parsing, Minetti pace model, race route analysis, and live recalibration.
 
 # api / usage
 
@@ -229,18 +225,35 @@ Domain: slope in `[-0.45, 0.45]` (clamped beyond).
 ```rust
 use navigo::pace_model::{
     fatigue_factor, circadian_factor, WeatherLookup, WeatherConditions,
+    K_FATIGUE, DEFAULT_BASE_PACE_S_PER_KM, DEFAULT_LIFE_BASE_STOP_S,
 };
 
-let fatigue  = fatigue_factor(d_eff_km, k_fatigue);   // exponential decay
-let circadian = circadian_factor(unix_time_s);          // cosine, −15% at 03:30 UTC
+let fatigue   = fatigue_factor(d_eff_km, k_fatigue);  // exponential decay (≥ 1.0)
+let circadian = circadian_factor(unix_time_s);         // cosine, −15% at 03:30 UTC
+
+// WeatherConditions fields:
+// temperature_c:   °C
+// humidity_pct:    0–100
+// wind_kmh:        km/h
+// precip_prob_pct: 0–100
 
 let weather = WeatherLookup::empty();
 // or with per-checkpoint data:
-let weather = WeatherLookup::new(vec![
-    ("La Mongie".to_string(), WeatherConditions { temperature_c: 5.0, wind_kph: 30.0, precipitation_mm: 2.0 }),
-]);
+let weather = WeatherLookup::new(
+    vec!["La Mongie".to_string()],
+    vec![WeatherConditions { temperature_c: 5.0, humidity_pct: 80.0, wind_kmh: 30.0, precip_prob_pct: 40.0 }],
+);
 let factor = weather.factor_for("La Mongie"); // combined thermal + wind + precip factor
 ```
+
+Useful constants:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `K_FATIGUE` | `0.002` | Default fatigue coefficient |
+| `DEFAULT_BASE_PACE_S_PER_KM` | `500.0` | 8:20/km flat pace |
+| `DEFAULT_LIFE_BASE_STOP_S` | `3600` | Default LifeBase stop (1 h) |
+| `RECOVERY_LIFE_BASE` | `0.20` | 20 % effort reset at LifeBase |
 
 ---
 
@@ -268,11 +281,16 @@ One `LegStats` per consecutive pair of section-boundary waypoints.
 
 ```rust
 let legs: Vec<leg::LegStats> = leg::compute_from_waypoints(&trace, &waypoints);
+// legs[i].leg_id
+// legs[i].section_idx
+// legs[i].start_location / end_location  (waypoint names)
 // legs[i].total_distance_km
 // legs[i].total_elevation_gain_m / total_elevation_loss_m
-// legs[i].bearing         (degrees)
-// legs[i].difficulty      (1–5)
-// legs[i].estimated_duration_s
+// legs[i].avg_slope / max_slope          (% grade)
+// legs[i].min_elevation / max_elevation  (meters)
+// legs[i].bearing                        (degrees from north)
+// legs[i].difficulty                     (1–5, Naismith effort)
+// legs[i].estimated_duration_s           (Naismith rule, no fatigue)
 ```
 
 ### Sections
@@ -282,19 +300,47 @@ Sections are legs enriched with pace-model data (Minetti + fatigue + circadian +
 ```rust
 let sections: Option<Vec<section::SectionStats>> =
     section::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
-// sections[i].pace_factor          — combined speed factor vs flat
-// sections[i].max_completion_time  — Unix timestamp of the waypoint cutoff
-// sections[i].cutoff_ratio         — estimated_time / time_budget  (< 1.0 = ok)
-// sections[i].stop_duration        — planned stop at end waypoint (s)
+// sections[i].section_id / stage_idx
+// sections[i].start_location / end_location
+// sections[i].total_distance_km
+// sections[i].total_elevation_gain_m / total_elevation_loss_m
+// sections[i].avg_slope / max_slope / min_elevation / max_elevation
+// sections[i].start_time / end_time      (Unix timestamps from waypoint <time>, or None)
+// sections[i].bearing / difficulty
+// sections[i].pace_factor                — combined speed factor vs flat
+// sections[i].estimated_duration_s       — moving time + planned stop
+// sections[i].max_completion_time        — cutoff as Unix timestamp, or None
+// sections[i].cutoff_ratio               — estimated_duration / time_budget (< 1.0 = ok)
+// sections[i].stop_duration              — planned stop at end checkpoint (s), or None
 ```
 
 ### Stages
 
-Stages group sections between Start / LifeBase / Arrival boundaries.
+Stages group sections between Start / LifeBase / Arrival boundaries (TimeBarrier waypoints are skipped).
 
 ```rust
 let stages: Option<Vec<stage::StageStats>> =
     stage::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
+// stages[i].stage_id
+// stages[i].start_location / end_location
+// stages[i].total_distance_km
+// stages[i].total_elevation_gain_m / total_elevation_loss_m
+// stages[i].avg_slope / max_slope / min_elevation / max_elevation
+// stages[i].start_time / end_time
+// stages[i].bearing / difficulty
+// stages[i].pace_factor / estimated_duration_s
+// stages[i].max_completion_time / cutoff_ratio / stop_duration
+```
+
+---
+
+## Time utilities
+
+```rust
+use navigo::time::parse_iso8601_to_epoch;
+
+// Supported formats: "2025-11-20T12:00:00Z", "2025-11-20T12:00:00+01:00"
+let epoch: Result<i64, _> = parse_iso8601_to_epoch("2025-11-20T12:00:00Z");
 ```
 
 ---
