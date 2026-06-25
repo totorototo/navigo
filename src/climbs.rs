@@ -72,15 +72,27 @@ pub fn detect_climbs(
             valley_cursor += 1;
         }
 
-        let valley_idx = if !valleys.is_empty() && valleys[valley_cursor] < peak_idx {
+        let ampd_valley_idx = if !valleys.is_empty() && valleys[valley_cursor] < peak_idx {
             valleys[valley_cursor]
         } else {
             0
         };
 
-        if valley_idx < min_valley_start {
-            continue;
-        }
+        // If the nearest AMPD valley was already claimed by a prior climb, scan the
+        // unclaimed range for the actual lowest point to use as the valley base.
+        let valley_idx = if ampd_valley_idx < min_valley_start {
+            (min_valley_start..peak_idx)
+                .min_by(|&a, &b| {
+                    locations[a]
+                        .altitude
+                        .partial_cmp(&locations[b].altitude)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(min_valley_start)
+        } else {
+            ampd_valley_idx
+        };
+
         if valley_idx >= peak_idx {
             continue;
         }
@@ -180,13 +192,18 @@ mod tests {
     }
 
     #[test]
-    fn two_peaks_share_same_valley_produces_one_climb() {
-        // No valley between peaks — second peak cannot reuse the first valley.
+    fn two_peaks_no_ampd_valley_between_them_uses_fallback_minimum() {
+        // AMPD detected no valley between the two peaks.  The fallback path
+        // should find the lowest point in the unclaimed range and use it as
+        // the valley base for the second climb.
+        //
+        // Climb A: valley=0 (100 m) → peak=2 (600 m), 2 km, 25 %, score 50 ✓
+        // Climb B: fallback valley=3 (580 m) → peak=4 (700 m), 1.5 km, 8 %, score 12 ✓
         let pts = vec![
             loc(0.0, 100.0), // 0: valley
             loc(0.1, 200.0), // 1
-            loc(0.2, 600.0), // 2: peak A  (qualifies: 2 km × 25 % = 50 > 3.5)
-            loc(0.3, 580.0), // 3: slight dip — not a detected valley
+            loc(0.2, 600.0), // 2: peak A
+            loc(0.3, 580.0), // 3: dip — not detected by AMPD, used as fallback valley
             loc(0.4, 700.0), // 4: peak B
         ];
         let dists = vec![0.0, 0.5, 2.0, 2.5, 4.0];
@@ -194,9 +211,11 @@ mod tests {
         let valleys = vec![0usize];
 
         let climbs = detect_climbs(&peaks, &valleys, &pts, &dists);
-        assert_eq!(climbs.len(), 1);
+        assert_eq!(climbs.len(), 2);
         assert_eq!(climbs[0].start_index, 0);
         assert_eq!(climbs[0].end_index, 2);
+        assert_eq!(climbs[1].start_index, 3);
+        assert_eq!(climbs[1].end_index, 4);
     }
 
     #[test]

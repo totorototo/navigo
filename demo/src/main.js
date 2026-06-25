@@ -367,10 +367,15 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
     ctx.stroke();
   }
 
-  // ── X labels + ticks
+  // ── X labels + ticks — step chosen so labels never overlap
+  const minTickSpacingPx = 45;
+  const rawStepKm = (minTickSpacingPx / CW) * maxDist;
+  const niceSteps = [1, 2, 5, 10, 20, 25, 50, 100];
+  const tickStepKm = niceSteps.find((s) => s >= rawStepKm) ?? 100;
+
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  for (let d = 0; d <= maxDist; d += 5) {
+  for (let d = 0; d <= maxDist; d += tickStepKm) {
     const x = xP(d);
     ctx.fillText(d + "km", x, H - PAD.bottom + 6);
     ctx.beginPath();
