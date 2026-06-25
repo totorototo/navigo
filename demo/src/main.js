@@ -147,11 +147,11 @@ function renderWaypoints(waypoints) {
           .map(
             (w, i) => `
           <tr>
-            <td class="num">${String(i + 1).padStart(2, "0")}</td>
-            <td>${w.name}</td>
-            <td><span class="type-badge ${typeClass(w.wpt_type)}">${typeLabel(w.wpt_type)}</span></td>
-            <td class="num">${w.elevation != null ? Math.round(w.elevation) + " m" : "—"}</td>
-            <td class="num">${formatTimestamp(w.time)}</td>
+            <td class="num" data-label="#">${String(i + 1).padStart(2, "0")}</td>
+            <td data-label="Name">${w.name}</td>
+            <td data-label="Type"><span class="type-badge ${typeClass(w.wpt_type)}">${typeLabel(w.wpt_type)}</span></td>
+            <td class="num" data-label="Elevation">${w.elevation != null ? Math.round(w.elevation) + " m" : "—"}</td>
+            <td class="num" data-label="Cutoff">${formatTimestamp(w.time)}</td>
           </tr>`,
           )
           .join("")}
@@ -190,14 +190,14 @@ function renderSections(sections, waypoints) {
             const toName = waypoints[s.id + 1]?.name ?? "—";
             return `
           <tr>
-            <td class="num">${String(s.id + 1).padStart(2, "0")}</td>
-            <td class="leg-label">${fromName} → ${toName}</td>
-            <td class="num">${s.total_distance_km.toFixed(1)} km</td>
-            <td class="num muted">${cumulativeKm.toFixed(1)} km</td>
-            <td class="num gain">+${Math.round(s.total_elevation_gain_m)} m</td>
-            <td class="num loss">−${Math.round(s.total_elevation_loss_m)} m</td>
-            <td class="num">${formatDuration(s.estimated_duration_s)}</td>
-            <td class="num stars">${stars(s.difficulty)}</td>
+            <td class="num" data-label="#">${String(s.id + 1).padStart(2, "0")}</td>
+            <td class="leg-label" data-label="From → To">${fromName} → ${toName}</td>
+            <td class="num" data-label="Dist.">${s.total_distance_km.toFixed(1)} km</td>
+            <td class="num muted" data-label="Cum.">${cumulativeKm.toFixed(1)} km</td>
+            <td class="num gain" data-label="Gain">+${Math.round(s.total_elevation_gain_m)} m</td>
+            <td class="num loss" data-label="Loss">−${Math.round(s.total_elevation_loss_m)} m</td>
+            <td class="num" data-label="Est. time">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num stars" data-label="Difficulty">${stars(s.difficulty)}</td>
           </tr>`;
           })
           .join("")}
@@ -239,13 +239,13 @@ function renderStages(stages, waypoints) {
             const toName = stageBoundaries[s.id + 1]?.name ?? "—";
             return `
           <tr>
-            <td class="num">${String(s.id + 1).padStart(2, "0")}</td>
-            <td class="leg-label">${fromName} → ${toName}</td>
-            <td class="num">${s.total_distance_km.toFixed(1)} km</td>
-            <td class="num gain">+${Math.round(s.total_elevation_gain_m)} m</td>
-            <td class="num loss">−${Math.round(s.total_elevation_loss_m)} m</td>
-            <td class="num">${formatDuration(s.estimated_duration_s)}</td>
-            <td class="num stars">${stars(s.difficulty)}</td>
+            <td class="num" data-label="Stage">${String(s.id + 1).padStart(2, "0")}</td>
+            <td class="leg-label" data-label="From → To">${fromName} → ${toName}</td>
+            <td class="num" data-label="Distance">${s.total_distance_km.toFixed(1)} km</td>
+            <td class="num gain" data-label="Gain">+${Math.round(s.total_elevation_gain_m)} m</td>
+            <td class="num loss" data-label="Loss">−${Math.round(s.total_elevation_loss_m)} m</td>
+            <td class="num" data-label="Est. time">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num stars" data-label="Difficulty">${stars(s.difficulty)}</td>
           </tr>`;
           })
           .join("")}
@@ -256,7 +256,7 @@ function renderStages(stages, waypoints) {
 function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   const DPR = window.devicePixelRatio || 1;
   const W = canvas.parentElement.clientWidth;
-  const H = 260;
+  const H = W < 600 ? 180 : 260;
   canvas.style.width = W + "px";
   canvas.style.height = H + "px";
   canvas.width = W * DPR;

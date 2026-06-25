@@ -381,6 +381,107 @@
       footer a {
         color: var(--black);
       }
+
+      /* ── RESPONSIVE ─────────────────────────────────────────────────── */
+      @media (max-width: 599px) {
+        body {
+          padding: 1rem;
+        }
+
+        header {
+          padding: 1rem;
+        }
+
+        header .tag {
+          position: static;
+          display: inline-block;
+          margin-bottom: 0.5rem;
+        }
+
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .stat-card {
+          border-bottom: var(--b);
+        }
+
+        .stat-card .value {
+          font-size: 1.6rem;
+        }
+
+        /* right column: no right border */
+        .stat-card:nth-child(2n) {
+          border-right: none;
+        }
+
+        /* last card alone in its row: span both columns */
+        .stat-card:last-child:nth-child(odd) {
+          grid-column: 1 / -1;
+          border-right: none;
+          border-bottom: none;
+        }
+
+        /* last card already in right column (even card count) */
+        .stat-card:last-child:nth-child(2n) {
+          border-bottom: none;
+        }
+
+        footer {
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+
+        /* ── Data tables → card layout ── */
+        .data-table {
+          display: block;
+          border: none;
+          margin-bottom: 0;
+        }
+
+        .data-table thead {
+          display: none;
+        }
+
+        .data-table tbody,
+        .data-table tr {
+          display: block;
+        }
+
+        .data-table tr {
+          border: var(--b);
+          border-top: none;
+          padding: 0.75rem 1rem;
+        }
+
+        .data-table tr:first-child {
+          border-top: var(--b);
+        }
+
+        .data-table td {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 0.2rem 0;
+          border-bottom: 1px solid #eee;
+          gap: 1rem;
+        }
+
+        .data-table td:last-child {
+          border-bottom: none;
+        }
+
+        .data-table td::before {
+          content: attr(data-label);
+          font-size: 0.5rem;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: #888;
+          white-space: nowrap;
+          flex-shrink: 0;
+          padding-top: 0.15rem;
+        }
+      }
     </style>
   </head>
   <body>
