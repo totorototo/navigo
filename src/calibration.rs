@@ -63,6 +63,7 @@ struct ResolvedRange {
 ///
 /// When `apply_end_effects` is true (runner reaches the checkpoint), applies LifeBase
 /// fatigue recovery and populates `stop_out` with the planned stop time.
+#[allow(clippy::too_many_arguments)]
 fn advance_range(
     trace: &Trace,
     range: &ResolvedRange,
@@ -117,6 +118,7 @@ fn advance_range(
 /// calibrated pace, re-seeding the circadian clock to `actual_elapsed_s`.
 ///
 /// Returns `None` when fewer than 2 boundaries exist.
+#[allow(clippy::too_many_arguments)]
 pub fn recalibrate_from_current(
     trace: &Trace,
     waypoints: &[Waypoint],

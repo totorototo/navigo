@@ -67,12 +67,7 @@ pub fn parse_trace_points(bytes: &[u8]) -> Vec<Location> {
     let mut locations = Vec::new();
     let mut pos = 0;
 
-    loop {
-        let trkpt_start = match find_from(bytes, pos, b"<trkpt") {
-            Some(index) => index,
-            None => break,
-        };
-
+    while let Some(trkpt_start) = find_from(bytes, pos, b"<trkpt") {
         let trkpt_end = match find_from(bytes, trkpt_start, b"</trkpt>") {
             Some(index) => index,
             None => break,
@@ -201,11 +196,7 @@ pub fn parse_waypoints(bytes: &[u8]) -> Vec<Waypoint> {
     let mut waypoints = Vec::new();
     let mut pos = 0;
 
-    loop {
-        let wpt_start = match find_from(bytes, pos, b"<wpt") {
-            Some(index) => index,
-            None => break,
-        };
+    while let Some(wpt_start) = find_from(bytes, pos, b"<wpt") {
         let wpt_end = match find_from(bytes, wpt_start, b"</wpt>") {
             Some(index) => index,
             None => break,

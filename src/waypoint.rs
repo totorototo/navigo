@@ -24,10 +24,10 @@ impl Waypoint {
 
     /// Stage boundaries are Start, LifeBase, and Arrival (not TimeBarrier).
     pub fn is_stage_boundary(&self) -> bool {
-        match self.wpt_type.as_deref() {
-            Some("Start") | Some("LifeBase") | Some("Arrival") => true,
-            _ => false,
-        }
+        matches!(
+            self.wpt_type.as_deref(),
+            Some("Start") | Some("LifeBase") | Some("Arrival")
+        )
     }
 }
 

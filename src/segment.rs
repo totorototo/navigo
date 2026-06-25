@@ -23,6 +23,7 @@ pub struct SegmentMetrics {
 /// caller can carry fatigue and circadian state across consecutive segments.
 ///
 /// `clock_start` is the race start epoch or `None` for a neutral (1.0) circadian factor.
+#[allow(clippy::too_many_arguments)]
 pub fn compute(
     trace: &Trace,
     start_index: usize,
