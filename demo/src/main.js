@@ -1,29 +1,46 @@
-import init, { buildTrace } from "../pkg/navigo.js";
-import { generateAlpineRoute } from "./sample-trace.js";
+import init, { parseGpx, parseGpxFull } from "../pkg/navigo.js";
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 await init();
 
-const pts = generateAlpineRoute();
-const trace = buildTrace(pts);
+const response = await fetch("/grp-160-2026.gpx");
+const buffer = await response.arrayBuffer();
+const bytes = new Uint8Array(buffer);
+
+const trace = parseGpx(bytes);
+const full = parseGpxFull(bytes, 500, 0.002, 3600);
+
+if (!trace || !full) {
+  document.body.innerHTML =
+    '<p style="padding:2rem;font-family:monospace">Failed to parse GPX.</p>';
+  throw new Error("GPX parse failed");
+}
 
 // Cache all bulk arrays once — each getter copies WASM→JS heap.
 const locsFlat = trace.locations_flat;
 const dists = trace.cumulative_distances;
-const gains = trace.cumulative_elevation_gains;
-const losses = trace.cumulative_elevation_losses;
 const peaks = trace.peaks;
 const valleys = trace.valleys;
 const climbs = trace.climbs();
 const area = trace.area();
 
+// ── Header ────────────────────────────────────────────────────────────────────
+
+setText("race-title", full.metadata.name || "");
+
 // ── Stats cards ───────────────────────────────────────────────────────────────
 
-setText("stat-distance", trace.total_distance.toFixed(1) + " km");
-setText("stat-gain", "+" + Math.round(trace.total_elevation_gain) + " m");
-setText("stat-loss", "−" + Math.round(trace.total_elevation_loss) + " m");
-setText("stat-locations", trace.location_count.toString());
+setText("stat-distance", full.trace.total_distance_km.toFixed(1) + " km");
+setText(
+  "stat-gain",
+  "+" + Math.round(full.trace.total_elevation_gain_m) + " m",
+);
+setText(
+  "stat-loss",
+  "−" + Math.round(full.trace.total_elevation_loss_m) + " m",
+);
+setText("stat-locations", full.trace.location_count.toString());
 setText("stat-climbs", climbs.length.toString());
 
 if (area) {
@@ -46,6 +63,18 @@ window.addEventListener("resize", () =>
 
 renderClimbs(climbs);
 
+// ── Checkpoints ───────────────────────────────────────────────────────────────
+
+renderWaypoints(full.waypoints);
+
+// ── Sections ─────────────────────────────────────────────────────────────────
+
+renderSections(full.sections, full.waypoints);
+
+// ── Stages ───────────────────────────────────────────────────────────────────
+
+renderStages(full.stages, full.waypoints);
+
 // ── Free WASM memory — all data already copied to JS ─────────────────────────
 trace.free();
 
@@ -54,6 +83,174 @@ trace.free();
 function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+function formatDuration(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+}
+
+function formatTimestamp(unixSeconds) {
+  if (unixSeconds == null) return "—";
+  const date = new Date(unixSeconds * 1000);
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${days[date.getUTCDay()]} ${hh}:${mm}`;
+}
+
+function typeLabel(wptType) {
+  const labels = {
+    Start: "START",
+    Arrival: "FINISH",
+    LifeBase: "LIFE BASE",
+    TimeBarrier: "BARRIER",
+  };
+  return labels[wptType] || wptType || "—";
+}
+
+function typeClass(wptType) {
+  const classes = {
+    Start: "type-start",
+    Arrival: "type-arrival",
+    LifeBase: "type-lifebase",
+    TimeBarrier: "type-barrier",
+  };
+  return classes[wptType] || "";
+}
+
+function stars(difficulty) {
+  return "★".repeat(difficulty) + "☆".repeat(5 - difficulty);
+}
+
+function renderWaypoints(waypoints) {
+  const el = document.getElementById("waypoints-list");
+  if (!el) return;
+  if (!waypoints || waypoints.length === 0) {
+    el.innerHTML = '<p class="empty">NO CHECKPOINTS FOUND.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Elevation</th>
+          <th>Cutoff (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${waypoints
+          .map(
+            (w, i) => `
+          <tr>
+            <td class="num">${String(i + 1).padStart(2, "0")}</td>
+            <td>${w.name}</td>
+            <td><span class="type-badge ${typeClass(w.wpt_type)}">${typeLabel(w.wpt_type)}</span></td>
+            <td class="num">${w.elevation != null ? Math.round(w.elevation) + " m" : "—"}</td>
+            <td class="num">${formatTimestamp(w.time)}</td>
+          </tr>`,
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
+function renderSections(sections, waypoints) {
+  const el = document.getElementById("sections-list");
+  if (!el) return;
+  if (!sections || sections.length === 0) {
+    el.innerHTML = '<p class="empty">NO SECTIONS FOUND.</p>';
+    return;
+  }
+
+  let cumulativeKm = 0;
+  el.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>From → To</th>
+          <th>Dist.</th>
+          <th>Cum.</th>
+          <th>Gain</th>
+          <th>Loss</th>
+          <th>Est. time</th>
+          <th>Difficulty</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sections
+          .map((s) => {
+            cumulativeKm += s.total_distance_km;
+            const fromName = waypoints[s.id]?.name ?? "—";
+            const toName = waypoints[s.id + 1]?.name ?? "—";
+            return `
+          <tr>
+            <td class="num">${String(s.id + 1).padStart(2, "0")}</td>
+            <td class="leg-label">${fromName} → ${toName}</td>
+            <td class="num">${s.total_distance_km.toFixed(1)} km</td>
+            <td class="num muted">${cumulativeKm.toFixed(1)} km</td>
+            <td class="num gain">+${Math.round(s.total_elevation_gain_m)} m</td>
+            <td class="num loss">−${Math.round(s.total_elevation_loss_m)} m</td>
+            <td class="num">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num stars">${stars(s.difficulty)}</td>
+          </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
+function renderStages(stages, waypoints) {
+  const el = document.getElementById("stages-list");
+  if (!el) return;
+  if (!stages || stages.length === 0) {
+    el.innerHTML = '<p class="empty">NO STAGES FOUND.</p>';
+    return;
+  }
+
+  const stageBoundaries = waypoints
+    ? waypoints.filter((w) =>
+        ["Start", "LifeBase", "Arrival"].includes(w.wpt_type),
+      )
+    : [];
+
+  el.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th>From → To</th>
+          <th>Distance</th>
+          <th>Gain</th>
+          <th>Loss</th>
+          <th>Est. time</th>
+          <th>Difficulty</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${stages
+          .map((s) => {
+            const fromName = stageBoundaries[s.id]?.name ?? "—";
+            const toName = stageBoundaries[s.id + 1]?.name ?? "—";
+            return `
+          <tr>
+            <td class="num">${String(s.id + 1).padStart(2, "0")}</td>
+            <td class="leg-label">${fromName} → ${toName}</td>
+            <td class="num">${s.total_distance_km.toFixed(1)} km</td>
+            <td class="num gain">+${Math.round(s.total_elevation_gain_m)} m</td>
+            <td class="num loss">−${Math.round(s.total_elevation_loss_m)} m</td>
+            <td class="num">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num stars">${stars(s.difficulty)}</td>
+          </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>`;
 }
 
 function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {

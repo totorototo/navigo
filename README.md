@@ -7,6 +7,8 @@
 
 simply manipulate GPS/geospatial data — in rust
 
+> **New in 0.4.0** — GPX parsing, Minetti pace model, race route analysis (legs / sections / stages), live recalibration, and `parseGpxFull` WASM binding.
+
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 # api / usage
@@ -160,6 +162,172 @@ Climbs are qualified using Garmin Climb Pro thresholds:
 
 ---
 
+## GPX parsing
+
+Parse a `.gpx` file from raw bytes — no XML dependency, byte-scanning only.
+
+```rust
+use navigo::gpx::{parse_trace_points, parse_waypoints, parse_metadata};
+
+let bytes = std::fs::read("route.gpx").unwrap();
+
+// Extract track points as Vec<Location>
+let locations = parse_trace_points(&bytes);
+
+// Extract <wpt> elements as Vec<Waypoint>
+let waypoints = parse_waypoints(&bytes);
+
+// Extract <metadata> fields
+let meta = parse_metadata(&bytes);
+// meta.name        → Option<String>
+// meta.description → Option<String>
+```
+
+---
+
+## Waypoints
+
+```rust
+pub struct Waypoint {
+    pub latitude:      f64,
+    pub longitude:     f64,
+    pub elevation:     Option<f64>,
+    pub name:          String,
+    pub description:   Option<String>,
+    pub comment:       Option<String>,
+    pub symbol:        Option<String>,
+    pub wpt_type:      Option<String>,   // e.g. "Start", "LifeBase", "TimeBarrier"
+    pub time:          Option<i64>,      // Unix timestamp (seconds)
+    pub stop_duration: Option<u32>,      // planned stop at this point (seconds)
+}
+```
+
+Boundary classification:
+
+```rust
+waypoint.is_section_boundary(); // true for any waypoint with a non-null type
+waypoint.is_stage_boundary();   // true only for Start / LifeBase / Arrival
+```
+
+---
+
+## Pace model
+
+### Minetti 2002
+
+```rust
+use navigo::minetti::{cmet, pace_factor, CMET_FLAT};
+
+let cost = cmet(0.10);          // metabolic cost at +10% grade (J/(kg·m))
+let factor = pace_factor(0.10); // relative speed factor vs flat (= cmet/CMET_FLAT)
+```
+
+Domain: slope in `[-0.45, 0.45]` (clamped beyond).
+
+### Fatigue, circadian & weather
+
+```rust
+use navigo::pace_model::{
+    fatigue_factor, circadian_factor, WeatherLookup, WeatherConditions,
+};
+
+let fatigue  = fatigue_factor(d_eff_km, k_fatigue);   // exponential decay
+let circadian = circadian_factor(unix_time_s);          // cosine, −15% at 03:30 UTC
+
+let weather = WeatherLookup::empty();
+// or with per-checkpoint data:
+let weather = WeatherLookup::new(vec![
+    ("La Mongie".to_string(), WeatherConditions { temperature_c: 5.0, wind_kph: 30.0, precipitation_mm: 2.0 }),
+]);
+let factor = weather.factor_for("La Mongie"); // combined thermal + wind + precip factor
+```
+
+---
+
+## Route analysis
+
+All three levels take a built `Trace` and a slice of `Waypoint`s derived from the same GPX file.
+
+```rust
+use navigo::gpx::{parse_trace_points, parse_waypoints};
+use navigo::{build_trace, leg, section, stage, pace_model::WeatherLookup};
+
+let bytes = std::fs::read("route.gpx").unwrap();
+let trace = build_trace(&parse_trace_points(&bytes)).unwrap();
+let waypoints = parse_waypoints(&bytes);
+let weather = WeatherLookup::empty();
+
+const BASE_PACE: f64 = 500.0;  // s/km on flat terrain
+const K_FATIGUE: f64 = 0.002;
+const LIFE_BASE_STOP: u32 = 3600; // 1 h planned stop at LifeBase checkpoints
+```
+
+### Legs
+
+One `LegStats` per consecutive pair of section-boundary waypoints.
+
+```rust
+let legs: Vec<leg::LegStats> = leg::compute_from_waypoints(&trace, &waypoints);
+// legs[i].total_distance_km
+// legs[i].total_elevation_gain_m / total_elevation_loss_m
+// legs[i].bearing         (degrees)
+// legs[i].difficulty      (1–5)
+// legs[i].estimated_duration_s
+```
+
+### Sections
+
+Sections are legs enriched with pace-model data (Minetti + fatigue + circadian + weather).
+
+```rust
+let sections: Option<Vec<section::SectionStats>> =
+    section::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
+// sections[i].pace_factor          — combined speed factor vs flat
+// sections[i].max_completion_time  — Unix timestamp of the waypoint cutoff
+// sections[i].cutoff_ratio         — estimated_time / time_budget  (< 1.0 = ok)
+// sections[i].stop_duration        — planned stop at end waypoint (s)
+```
+
+### Stages
+
+Stages group sections between Start / LifeBase / Arrival boundaries.
+
+```rust
+let stages: Option<Vec<stage::StageStats>> =
+    stage::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
+```
+
+---
+
+## Live calibration
+
+Recalibrate remaining ETAs mid-race given the actual elapsed time at a known position.
+
+```rust
+use navigo::calibration::{recalibrate_from_current, BoundaryKind};
+
+let result = recalibrate_from_current(
+    &trace, &waypoints, BoundaryKind::Section,
+    current_index,   // trace point index snapped to current position
+    actual_elapsed_s,
+    BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather,
+);
+
+if let Some(cal) = result {
+    cal.calibration_factor;            // clamped to [0.5, 3.0]
+    cal.calibrated_base_pace_s_per_km; // adjusted flat pace
+    for eta in &cal.etas {
+        eta.id;
+        eta.remaining_duration_s;
+        eta.cumulative_remaining_s;
+    }
+}
+```
+
+The factor is only applied when `predicted_so_far ≥ 300 s` to avoid noise from very short segments.
+
+---
+
 ## WebAssembly
 
 The library can be compiled to WASM for use in web applications via the `wasm` feature.
@@ -186,11 +354,13 @@ WasmTrace stays in WASM memory
 
 ```bash
 cargo install wasm-pack
-wasm-pack build --target web       # ES modules — Vite, plain browser
-wasm-pack build --target bundler   # webpack / Rollup
+wasm-pack build --target web -- --features wasm      # ES modules — Vite, plain browser
+wasm-pack build --target bundler -- --features wasm  # webpack / Rollup
 ```
 
 ### usage
+
+**From raw coordinates (`buildTrace`)**
 
 ```js
 import init, { buildTrace } from "./navigo.js";
@@ -254,6 +424,36 @@ trace.climbs();
 
 // always release when done — Rust allocator has no GC bridge
 trace.free();
+```
+
+**From a GPX file (`parseGpx` / `parseGpxFull`)**
+
+```js
+import init, { parseGpx, parseGpxFull } from "./navigo.js";
+await init();
+
+const bytes = new Uint8Array(
+  await fetch("/route.gpx").then((r) => r.arrayBuffer()),
+);
+
+// Elevation profile + climb detection only
+const trace = parseGpx(bytes);
+// → WasmTrace | null  (same API as buildTrace)
+
+// Full race analysis — one call
+const full = parseGpxFull(bytes, 500, 0.002, 3600);
+// basePace=500 s/km, kFatigue=0.002, lifeBaseStop=3600 s
+// → {
+//     trace:     { total_distance_km, total_elevation_gain_m, … },
+//     metadata:  { name, description },
+//     waypoints: [{ latitude, longitude, elevation, name, wpt_type, time, … }],
+//     legs:      [{ total_distance_km, total_elevation_gain_m, bearing, difficulty, … }],
+//     sections:  [{ …leg fields, pace_factor, max_completion_time, cutoff_ratio, … }],
+//     stages:    [{ …same, grouped by Start/LifeBase/Arrival }],
+//   }
+//   or null on parse failure
+
+trace.free(); // still needed for the WasmTrace from parseGpx
 ```
 
 ### memory management

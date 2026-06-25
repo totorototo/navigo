@@ -2,7 +2,236 @@ use wasm_bindgen::prelude::*;
 
 use crate::{build_trace as core_build_trace, Location};
 
-// ── Public entry point ────────────────────────────────────────────────────────
+// ── Public entry points ───────────────────────────────────────────────────────
+
+/// Parse a GPX file from raw bytes (e.g. a `Uint8Array` read on the JS side)
+/// and build a `WasmTrace` from all `<trkpt>` elements.
+///
+/// Returns `null` when the GPX contains no valid track-points.
+#[wasm_bindgen(js_name = "parseGpx")]
+pub fn parse_gpx(bytes: &[u8]) -> Option<WasmTrace> {
+    let locations = crate::gpx::parse_trace_points(bytes);
+    core_build_trace(&locations)
+        .ok()
+        .map(|inner| WasmTrace { inner })
+}
+
+/// Parse a GPX file and compute the full analysis: trace metrics, waypoints,
+/// legs (Naismith), sections and stages (Minetti pace model).
+///
+/// `base_pace_s_per_km` — flat-terrain pace in s/km (e.g. 500 = 8:20/km).
+/// `k_fatigue`          — exponential fatigue coefficient (e.g. 0.002).
+/// `life_base_stop_s`   — default planned stop at LifeBase checkpoints (seconds).
+///
+/// Returns a JS object with `{ trace, waypoints, legs, sections, stages, metadata }`
+/// or `null` when the GPX contains no valid track-points.
+#[wasm_bindgen(js_name = "parseGpxFull")]
+pub fn parse_gpx_full(
+    bytes: &[u8],
+    base_pace_s_per_km: f64,
+    k_fatigue: f64,
+    life_base_stop_s: u32,
+) -> Option<JsValue> {
+    let locations = crate::gpx::parse_trace_points(bytes);
+    let trace = core_build_trace(&locations).ok()?;
+    let waypoints = crate::gpx::parse_waypoints(bytes);
+    let metadata = crate::gpx::parse_metadata(bytes);
+    let weather = crate::pace_model::WeatherLookup::empty();
+
+    let legs = crate::leg::compute_from_waypoints(&trace, &waypoints);
+    let sections =
+        crate::section::compute_from_waypoints(&trace, &waypoints, base_pace_s_per_km, k_fatigue, life_base_stop_s, &weather);
+    let stages =
+        crate::stage::compute_from_waypoints(&trace, &waypoints, base_pace_s_per_km, k_fatigue, life_base_stop_s, &weather);
+
+    let result = WasmGpxFull {
+        trace: WasmTraceSummary {
+            total_distance_km: trace.total_distance,
+            total_elevation_gain_m: trace.total_elevation_gain,
+            total_elevation_loss_m: trace.total_elevation_loss,
+            location_count: trace.locations.len() as u32,
+        },
+        waypoints: waypoints
+            .iter()
+            .map(|w| WasmWaypoint {
+                latitude: w.latitude,
+                longitude: w.longitude,
+                elevation: w.elevation,
+                name: w.name.clone(),
+                wpt_type: w.wpt_type.clone(),
+                time: w.time,
+                stop_duration: w.stop_duration,
+            })
+            .collect(),
+        legs: legs
+            .iter()
+            .map(|l| WasmLegStats {
+                leg_id: l.leg_id as u32,
+                section_idx: l.section_idx as u32,
+                start_index: l.start_index as u32,
+                end_index: l.end_index as u32,
+                start_location: l.start_location.clone(),
+                end_location: l.end_location.clone(),
+                total_distance_km: l.total_distance_km,
+                total_elevation_gain_m: l.total_elevation_gain_m,
+                total_elevation_loss_m: l.total_elevation_loss_m,
+                avg_slope: l.avg_slope,
+                max_slope: l.max_slope,
+                min_elevation: l.min_elevation,
+                max_elevation: l.max_elevation,
+                bearing: l.bearing,
+                difficulty: l.difficulty,
+                estimated_duration_s: l.estimated_duration_s,
+            })
+            .collect(),
+        sections: sections.map(|ss| {
+            ss.iter()
+                .map(|s| WasmIntervalStats {
+                    id: s.section_id as u32,
+                    group_idx: s.stage_idx as u32,
+                    start_index: s.start_index as u32,
+                    end_index: s.end_index as u32,
+                    start_location: s.start_location.clone(),
+                    end_location: s.end_location.clone(),
+                    total_distance_km: s.total_distance_km,
+                    total_elevation_gain_m: s.total_elevation_gain_m,
+                    total_elevation_loss_m: s.total_elevation_loss_m,
+                    avg_slope: s.avg_slope,
+                    max_slope: s.max_slope,
+                    min_elevation: s.min_elevation,
+                    max_elevation: s.max_elevation,
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                    bearing: s.bearing,
+                    difficulty: s.difficulty,
+                    estimated_duration_s: s.estimated_duration_s,
+                    pace_factor: s.pace_factor,
+                    max_completion_time: s.max_completion_time,
+                    cutoff_ratio: s.cutoff_ratio,
+                    stop_duration: s.stop_duration,
+                })
+                .collect()
+        }),
+        stages: stages.map(|ss| {
+            ss.iter()
+                .map(|s| WasmIntervalStats {
+                    id: s.stage_id as u32,
+                    group_idx: 0,
+                    start_index: s.start_index as u32,
+                    end_index: s.end_index as u32,
+                    start_location: s.start_location.clone(),
+                    end_location: s.end_location.clone(),
+                    total_distance_km: s.total_distance_km,
+                    total_elevation_gain_m: s.total_elevation_gain_m,
+                    total_elevation_loss_m: s.total_elevation_loss_m,
+                    avg_slope: s.avg_slope,
+                    max_slope: s.max_slope,
+                    min_elevation: s.min_elevation,
+                    max_elevation: s.max_elevation,
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                    bearing: s.bearing,
+                    difficulty: s.difficulty,
+                    estimated_duration_s: s.estimated_duration_s,
+                    pace_factor: s.pace_factor,
+                    max_completion_time: s.max_completion_time,
+                    cutoff_ratio: s.cutoff_ratio,
+                    stop_duration: s.stop_duration,
+                })
+                .collect()
+        }),
+        metadata: WasmGpxMetadata {
+            name: metadata.name,
+            description: metadata.description,
+        },
+    };
+
+    serde_wasm_bindgen::to_value(&result).ok()
+}
+
+// ── Serializable output types for parseGpxFull ────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct WasmTraceSummary {
+    total_distance_km: f64,
+    total_elevation_gain_m: f64,
+    total_elevation_loss_m: f64,
+    location_count: u32,
+}
+
+#[derive(serde::Serialize)]
+struct WasmWaypoint {
+    latitude: f64,
+    longitude: f64,
+    elevation: Option<f64>,
+    name: String,
+    wpt_type: Option<String>,
+    time: Option<i64>,
+    stop_duration: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct WasmLegStats {
+    leg_id: u32,
+    section_idx: u32,
+    start_index: u32,
+    end_index: u32,
+    start_location: String,
+    end_location: String,
+    total_distance_km: f64,
+    total_elevation_gain_m: f64,
+    total_elevation_loss_m: f64,
+    avg_slope: f64,
+    max_slope: f64,
+    min_elevation: f64,
+    max_elevation: f64,
+    bearing: f64,
+    difficulty: u8,
+    estimated_duration_s: f64,
+}
+
+#[derive(serde::Serialize)]
+struct WasmIntervalStats {
+    id: u32,
+    /// stage_idx for sections, 0 for stages.
+    group_idx: u32,
+    start_index: u32,
+    end_index: u32,
+    start_location: String,
+    end_location: String,
+    total_distance_km: f64,
+    total_elevation_gain_m: f64,
+    total_elevation_loss_m: f64,
+    avg_slope: f64,
+    max_slope: f64,
+    min_elevation: f64,
+    max_elevation: f64,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    bearing: f64,
+    difficulty: u8,
+    estimated_duration_s: f64,
+    pace_factor: f64,
+    max_completion_time: Option<i64>,
+    cutoff_ratio: Option<f64>,
+    stop_duration: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct WasmGpxMetadata {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct WasmGpxFull {
+    trace: WasmTraceSummary,
+    waypoints: Vec<WasmWaypoint>,
+    legs: Vec<WasmLegStats>,
+    sections: Option<Vec<WasmIntervalStats>>,
+    stages: Option<Vec<WasmIntervalStats>>,
+    metadata: WasmGpxMetadata,
+}
 
 /// Build a trace from a flat `Float64Array` of interleaved coordinates:
 /// `[lon₀, lat₀, alt₀,  lon₁, lat₁, alt₁, …]`.
