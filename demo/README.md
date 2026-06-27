@@ -5,12 +5,14 @@ Brutalist design — monospace, black borders, no gradients.
 
 ## what it shows
 
-- Total distance, elevation gain / loss, location count, detected climbs
+Loads a real race GPX file (`public/grp-160-2026.gpx`) and renders:
+
+- Stat cards — total distance, elevation gain / loss, location count, detected climbs, bounding box
 - Elevation profile canvas — solid black fill, yellow climb zones, peak / valley markers
 - Per-climb breakdown (distance, gain, grade, summit altitude, Garmin score)
-
-The sample trace is a synthetic 25 km Alpine route with three qualifying climbs,
-generated in `src/sample-trace.js`.
+- Checkpoints table — name, type, elevation, cutoff time
+- Sections table — pace-modelled splits between checkpoints (distance, gain/loss, est. time, difficulty)
+- Stages table — same, grouped by Start / LifeBase / Arrival
 
 ## prerequisites
 
@@ -63,18 +65,19 @@ demo/pkg/navigo.js + navigo_bg.wasm
         │
    browser loads WASM
         │
-buildTrace(Float64Array)   ← one copy JS → WASM
+fetch("/grp-160-2026.gpx") → Uint8Array
         │
-   Trace (lives in WASM memory)
+parseGpx(bytes)   ← one copy JS → WASM; track-points, waypoints
+        │           and metadata all parsed once
+   trace: Trace (lives in WASM memory)
         │
-   ┌────┴────────────────────────────────────┐
-   │  scalar getters   → free (registers)    │
-   │  array getters    → copy once, cache JS │
-   │  query methods    → cheap (scalars)     │
-   └─────────────────────────────────────────┘
+   ┌────┴──────────────────────────────────────────────┐
+   │  trace.total_distance, .climbs(), …  → free/cheap │
+   │  trace.analyze(options)              → legs/      │
+   │    sections/stages/waypoints, no bytes re-sent     │
+   └─────────────────────────────────────────────────────┘
         │
-   stats / canvas / climbs list
+   stats / canvas / climbs / checkpoints / sections / stages
         │
    trace.free()    ← release WASM memory
 ```
-
