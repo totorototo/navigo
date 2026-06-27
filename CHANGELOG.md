@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-27
+
+### Changed
+
+- **Breaking (WASM):** `parseGpxFull(bytes, basePaceSPerKm, kFatigue, lifeBaseStopS)`
+  is replaced by `analyzeGpx(bytes, options)` and `trace.analyze(options)`
+  — a single options object instead of positional args, so adding parameters
+  no longer risks transposed call sites.
+- **Breaking (WASM):** `parseGpx` now stores the parsed waypoints and metadata
+  inside the returned `Trace` (previously only track-points). This is what
+  makes `trace.analyze()` possible without re-sending the GPX bytes.
+- **Breaking (WASM):** the shared `IntervalStats` result shape is split into
+  `SectionStats` (has `stage_idx`) and `StageStats` (no stage index) — sections
+  and stages no longer share one DTO with a field that was meaningless on one
+  side.
+
+### Added
+
+- **WASM `trace.analyze(options)`**: method on `Trace` for the race
+  analysis (waypoints, legs, sections, stages) — pure opaque-handle-in,
+  JSON-out, no bytes cross the boundary a second time and the
+  simplification/elevation/climb pass is never repeated. Lives alongside
+  `Trace`'s other methods (`.climbs()`, `.area()`, …) instead of as a
+  free function, for discoverability and consistency.
+- **WASM `analyzeGpx(bytes, options)`**: one-call convenience wrapper around
+  `parseGpx` + `trace.analyze()` for callers who just want the JSON result.
+- `options.weather`: optional per-checkpoint forecast
+  (`{ name, temperatureC, humidityPct, windKmh, precipProbPct }`) now actually
+  reaches the pace model — previously `parseGpxFull` always used neutral
+  weather with no way to override it from JS.
+- WASM pipeline tests (`wasm::pipeline_tests`): parse an embedded GPX fixture
+  through `parse_gpx` → `compute_route_analysis`, asserting on the resulting
+  legs/sections/stages — previously this path was only checked manually via
+  the demo. Test suite now 144 tests (was 141).
+
 ## [0.4.0] - 2026-06-25
 
 ### Added
@@ -96,7 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Garmin-style climb segment detection.
 - CI pipeline (build, clippy, fmt, tests) and crates.io publish workflow.
 
-[Unreleased]: https://github.com/totorototo/navigo/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/totorototo/navigo/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/totorototo/navigo/compare/v0.4.4...v0.5.0
 [0.4.0]: https://github.com/totorototo/navigo/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/totorototo/navigo/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/totorototo/navigo/compare/v0.2.0...v0.3.0

@@ -381,14 +381,14 @@ Prebuilt bindings are published to npm as [`@totorototo/navigo`](https://www.npm
 
 ### how it works
 
-All data lives in WASM linear memory. The JS side holds a thin pointer (`WasmTrace`).
+All data lives in WASM linear memory. The JS side holds a thin pointer (`Trace`).
 Only the boundaries cross the WASM↔JS membrane — scalars are free (registers), bulk arrays are copied once on demand.
 
 ```
 buildTrace(Float64Array)          ← one O(n) copy JS→WASM, null if no points
        │
        ▼
-WasmTrace stays in WASM memory
+Trace stays in WASM memory
        │
        ├── trace.total_distance        → free (register)
        ├── trace.find_closest_point()  → free (scalars in/out)
@@ -422,7 +422,7 @@ const pts = new Float64Array([
   200,
 ]);
 const trace = buildTrace(pts);
-// → WasmTrace, or null if pts carries no points
+// → Trace, or null if pts carries no points
 
 // scalar getters — free
 trace.total_distance; // number (km)
@@ -472,39 +472,46 @@ trace.climbs();
 trace.free();
 ```
 
-**From a GPX file (`parseGpx` / `parseGpxFull`)**
+**From a GPX file (`parseGpx` / `trace.analyze()` / `analyzeGpx`)**
 
 ```js
-import init, { parseGpx, parseGpxFull } from "./navigo.js";
+import init, { parseGpx, analyzeGpx } from "./navigo.js";
 await init();
 
 const bytes = new Uint8Array(
   await fetch("/route.gpx").then((r) => r.arrayBuffer()),
 );
 
-// Elevation profile + climb detection only
+// Parse once — track-points, waypoints and metadata are all stored on the
+// returned Trace, so nothing needs to be re-sent for the steps below.
 const trace = parseGpx(bytes);
-// → WasmTrace | null  (same API as buildTrace)
+// → Trace | null  (same getters/methods as buildTrace, plus .analyze())
 
-// Full race analysis — one call
-const full = parseGpxFull(bytes, 500, 0.002, 3600);
-// basePace=500 s/km, kFatigue=0.002, lifeBaseStop=3600 s
+const options = { basePaceSPerKm: 500, kFatigue: 0.002, lifeBaseStopS: 3600 };
+
+// Race analysis from the trace you already have — no bytes cross the
+// boundary again, and the expensive trace computation isn't repeated.
+const analysis = trace.analyze(options);
 // → {
-//     trace:     { total_distance_km, total_elevation_gain_m, … },
-//     metadata:  { name, description },
 //     waypoints: [{ latitude, longitude, elevation, name, wpt_type, time, … }],
 //     legs:      [{ total_distance_km, total_elevation_gain_m, bearing, difficulty, … }],
 //     sections:  [{ …leg fields, pace_factor, max_completion_time, cutoff_ratio, … }],
 //     stages:    [{ …same, grouped by Start/LifeBase/Arrival }],
+//     metadata:  { name, description },
 //   }
-//   or null on parse failure
+//   or null on malformed options
 
-trace.free(); // still needed for the WasmTrace from parseGpx
+trace.free();
+
+// Or, if you just want the JSON in one call and don't need the Trace handle:
+const full = analyzeGpx(bytes, options);
+// → { trace: { total_distance_km, total_elevation_gain_m, … }, ...analysis }
+//   or null on parse failure
 ```
 
 ### memory management
 
-`WasmTrace` lives in WASM linear memory. The JS object is just a pointer — Rust cannot reclaim it when the JS variable is GC'd. Always call `.free()`, or register a `FinalizationRegistry`:
+`Trace` lives in WASM linear memory. The JS object is just a pointer — Rust cannot reclaim it when the JS variable is GC'd. Always call `.free()`, or register a `FinalizationRegistry`:
 
 ```js
 const registry = new FinalizationRegistry((t) => t.free());

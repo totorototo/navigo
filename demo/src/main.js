@@ -1,4 +1,4 @@
-import init, { parseGpx, parseGpxFull } from "../pkg/navigo.js";
+import init, { parseGpx } from "../pkg/navigo.js";
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,13 @@ const buffer = await response.arrayBuffer();
 const bytes = new Uint8Array(buffer);
 
 const trace = parseGpx(bytes);
-const full = parseGpxFull(bytes, 500, 0.002, 3600);
+const full = trace
+  ? trace.analyze({
+      basePaceSPerKm: 500,
+      kFatigue: 0.002,
+      lifeBaseStopS: 3600,
+    })
+  : null;
 
 if (!trace || !full) {
   document.body.innerHTML =
@@ -31,16 +37,10 @@ setText("race-title", full.metadata.name || "");
 
 // ── Stats cards ───────────────────────────────────────────────────────────────
 
-setText("stat-distance", full.trace.total_distance_km.toFixed(1) + " km");
-setText(
-  "stat-gain",
-  "+" + Math.round(full.trace.total_elevation_gain_m) + " m",
-);
-setText(
-  "stat-loss",
-  "−" + Math.round(full.trace.total_elevation_loss_m) + " m",
-);
-setText("stat-locations", full.trace.location_count.toString());
+setText("stat-distance", trace.total_distance.toFixed(1) + " km");
+setText("stat-gain", "+" + Math.round(trace.total_elevation_gain) + " m");
+setText("stat-loss", "−" + Math.round(trace.total_elevation_loss) + " m");
+setText("stat-locations", trace.location_count.toString());
 setText("stat-climbs", climbs.length.toString());
 
 if (area) {

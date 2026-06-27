@@ -15,7 +15,7 @@ npm install @totorototo/navigo
 No manual `init()` needed; the bundler wires up the `.wasm` import for you.
 
 ```js
-import { parseGpx, parseGpxFull, buildTrace } from "@totorototo/navigo";
+import { parseGpx, analyzeGpx, buildTrace } from "@totorototo/navigo";
 ```
 
 ## Usage (plain browser ESM)
@@ -23,7 +23,7 @@ import { parseGpx, parseGpxFull, buildTrace } from "@totorototo/navigo";
 ```js
 import init, {
   parseGpx,
-  parseGpxFull,
+  analyzeGpx,
   buildTrace,
 } from "@totorototo/navigo/web";
 await init();
@@ -33,9 +33,10 @@ await init();
 
 ## Entry functions
 
-### `parseGpx(bytes: Uint8Array): WasmTrace | null`
+### `parseGpx(bytes: Uint8Array): Trace | null`
 
-Parse a GPX file and return a `WasmTrace`. Returns `null` when the file
+Parse a GPX file into a `Trace` — track-points, waypoints and metadata are
+all parsed once and stored in WASM memory. Returns `null` when the file
 contains no valid track-points.
 
 ```js
@@ -43,29 +44,82 @@ const bytes = new Uint8Array(await file.arrayBuffer());
 const trace = parseGpx(bytes);
 ```
 
-### `parseGpxFull(bytes, basePaceSPerKm, kFatigue, lifeBaseStopS): object | null`
+### `trace.analyze(options): object | null`
 
-Parse a GPX file and compute the full race analysis. Returns `null` on empty
-input, or the following object:
+Method on `Trace`. Compute the race analysis (waypoints, legs, sections,
+stages) using this trace's waypoints (parsed once by `parseGpx`). Pure
+opaque-handle-in, JSON-out — no bytes cross the boundary again, and the
+expensive trace computation (simplification, elevation, climbs) is never
+repeated. Returns `null` on malformed `options`.
 
 ```js
-const result = parseGpxFull(bytes, 500, 0.002, 3600);
+const trace = parseGpx(bytes);
+const analysis = trace.analyze({
+  basePaceSPerKm: 500,
+  kFatigue: 0.002,
+  lifeBaseStopS: 3600,
+});
+// analysis.waypoints — Waypoint[]
+// analysis.legs      — LegStats[]
+// analysis.sections  — SectionStats[] | null
+// analysis.stages    — StageStats[] | null
+// analysis.metadata  — { name, description }
+trace.free();
+```
+
+See **`options`** below for the full shape (including optional `weather`).
+A `Trace` built via `buildTrace` (no GPX source) has no waypoints, so
+`.analyze()` on it returns an empty `legs` and `null` `sections`/`stages`.
+
+### `analyzeGpx(bytes, options): object | null`
+
+Convenience wrapper around `parseGpx` + `trace.analyze()` for callers who
+just want the JSON result and don't need the `Trace` handle (so there's
+no `.free()` to manage). If you already have a `Trace`, call
+`.analyze()` on it directly instead of parsing the bytes twice. Returns
+`null` on empty input or malformed `options`, or the following object:
+
+```js
+const result = analyzeGpx(bytes, {
+  basePaceSPerKm: 500,
+  kFatigue: 0.002,
+  lifeBaseStopS: 3600,
+});
 // result.trace      — TraceSummary
 // result.metadata   — { name, description }
 // result.waypoints  — Waypoint[]
 // result.legs       — LegStats[]
-// result.sections   — IntervalStats[] | null
-// result.stages     — IntervalStats[] | null
+// result.sections   — SectionStats[] | null
+// result.stages     — StageStats[] | null
 ```
 
-**Parameters**
+**`options`**
 
-| Parameter        | Type         | Description                                            |
-| ---------------- | ------------ | ------------------------------------------------------ |
-| `bytes`          | `Uint8Array` | Raw GPX file bytes                                     |
-| `basePaceSPerKm` | `number`     | Flat-terrain pace in s/km (e.g. `500` = 8:20/km)       |
-| `kFatigue`       | `number`     | Exponential fatigue coefficient (e.g. `0.002`)         |
-| `lifeBaseStopS`  | `number`     | Default planned stop at LifeBase checkpoints (seconds) |
+| Field            | Type                  | Description                                             |
+| ---------------- | --------------------- | -------------------------------------------------------- |
+| `basePaceSPerKm`  | `number`              | Flat-terrain pace in s/km (e.g. `500` = 8:20/km)         |
+| `kFatigue`        | `number`              | Exponential fatigue coefficient (e.g. `0.002`)           |
+| `lifeBaseStopS`   | `number`              | Default planned stop at LifeBase checkpoints (seconds)   |
+| `weather`         | `WeatherEntry[]`      | Optional. Per-checkpoint forecast (see below)            |
+
+**`WeatherEntry`** — matched against waypoint `name`; unmatched checkpoints use
+neutral weather (no slowdown):
+
+```ts
+{ name: string, temperatureC: number, humidityPct: number,
+  windKmh: number, precipProbPct: number }
+```
+
+```js
+const result = analyzeGpx(bytes, {
+  basePaceSPerKm: 500,
+  kFatigue: 0.002,
+  lifeBaseStopS: 3600,
+  weather: [
+    { name: "Chamonix", temperatureC: 32, humidityPct: 85, windKmh: 35, precipProbPct: 80 },
+  ],
+});
+```
 
 **`TraceSummary`**
 
@@ -93,10 +147,10 @@ const result = parseGpxFull(bytes, 500, 0.002, 3600);
   difficulty: number, estimated_duration_s: number }
 ```
 
-**`IntervalStats`** (sections and stages share this shape)
+**`SectionStats`**
 
 ```ts
-{ id: number, group_idx: number, start_index: number, end_index: number,
+{ id: number, stage_idx: number, start_index: number, end_index: number,
   start_location: string, end_location: string,
   total_distance_km: number, total_elevation_gain_m: number,
   total_elevation_loss_m: number, avg_slope: number, max_slope: number,
@@ -107,9 +161,11 @@ const result = parseGpxFull(bytes, 500, 0.002, 3600);
   stop_duration: number | null }
 ```
 
-### `buildTrace(flat: Float64Array): WasmTrace | null`
+**`StageStats`** — same shape as `SectionStats` minus `stage_idx`.
 
-Build a `WasmTrace` from interleaved coordinates
+### `buildTrace(flat: Float64Array): Trace | null`
+
+Build a `Trace` from interleaved coordinates
 `[lon₀, lat₀, alt₀, lon₁, lat₁, alt₁, …]`. Returns `null` when the array
 carries no points.
 
@@ -122,9 +178,9 @@ const trace = buildTrace(pts);
 
 ---
 
-## `WasmTrace`
+## `Trace`
 
-`WasmTrace` lives in WASM linear memory; the JS object is just a pointer.
+`Trace` lives in WASM linear memory; the JS object is just a pointer.
 Always call `.free()` when done, or use a `FinalizationRegistry`.
 
 ### Properties (getters — copy WASM → JS heap; call once and cache)
@@ -189,6 +245,12 @@ Detected climbs, each with:
   climb_dist_km: number, elevation_gain: number, summit_elev: number,
   avg_gradient: number }
 ```
+
+#### `analyze(options): object | null`
+
+Race analysis (waypoints, legs, sections, stages) — see
+[`trace.analyze(options)`](#traceanalyzeoptions-object--null) above for the
+full shape and `options` reference.
 
 #### `free(): void`
 

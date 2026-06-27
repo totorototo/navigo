@@ -65,7 +65,7 @@ demo/pkg/navigo.js + navigo_bg.wasm
         │
 buildTrace(Float64Array)   ← one copy JS → WASM
         │
-   WasmTrace (lives in WASM memory)
+   Trace (lives in WASM memory)
         │
    ┌────┴────────────────────────────────────┐
    │  scalar getters   → free (registers)    │

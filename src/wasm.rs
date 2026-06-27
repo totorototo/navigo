@@ -1,69 +1,94 @@
 use wasm_bindgen::prelude::*;
 
+use crate::pace_model::{WeatherConditions, WeatherLookup};
 use crate::{build_trace as core_build_trace, Location};
 
 // ── Public entry points ───────────────────────────────────────────────────────
 
 /// Parse a GPX file from raw bytes (e.g. a `Uint8Array` read on the JS side)
-/// and build a `WasmTrace` from all `<trkpt>` elements.
+/// into a `Trace` — track-points, waypoints and metadata are all parsed
+/// once here and stored in WASM memory.
 ///
 /// Returns `null` when the GPX contains no valid track-points.
 #[wasm_bindgen(js_name = "parseGpx")]
-pub fn parse_gpx(bytes: &[u8]) -> Option<WasmTrace> {
-    let locations = crate::gpx::parse_trace_points(bytes);
-    core_build_trace(&locations)
-        .ok()
-        .map(|inner| WasmTrace { inner })
+pub fn parse_gpx(bytes: &[u8]) -> Option<Trace> {
+    parse_wasm_trace(bytes)
 }
 
-/// Parse a GPX file and compute the full analysis: trace metrics, waypoints,
-/// legs (Naismith), sections and stages (Minetti pace model).
+/// Parse a GPX file and compute the full analysis in one call: trace metrics,
+/// waypoints, legs (Naismith), sections and stages (Minetti pace model).
 ///
-/// `base_pace_s_per_km` — flat-terrain pace in s/km (e.g. 500 = 8:20/km).
-/// `k_fatigue`          — exponential fatigue coefficient (e.g. 0.002).
-/// `life_base_stop_s`   — default planned stop at LifeBase checkpoints (seconds).
+/// Convenience wrapper around `parseGpx` + `trace.analyze()` for callers who
+/// just want the JSON result and don't need the `Trace` handle (so there's
+/// no `.free()` to manage). If you already have a `Trace`, call
+/// `.analyze()` on it directly instead of parsing the bytes twice.
+///
+/// `options` — a JS object: `{ basePaceSPerKm, kFatigue, lifeBaseStopS, weather? }`.
+/// `weather` is an optional array of
+/// `{ name, temperatureC, humidityPct, windKmh, precipProbPct }`, matched against
+/// checkpoint names; unmatched checkpoints use neutral weather.
 ///
 /// Returns a JS object with `{ trace, waypoints, legs, sections, stages, metadata }`
-/// or `null` when the GPX contains no valid track-points.
-#[wasm_bindgen(js_name = "parseGpxFull")]
-pub fn parse_gpx_full(
-    bytes: &[u8],
-    base_pace_s_per_km: f64,
-    k_fatigue: f64,
-    life_base_stop_s: u32,
-) -> Option<JsValue> {
-    let locations = crate::gpx::parse_trace_points(bytes);
-    let trace = core_build_trace(&locations).ok()?;
-    let waypoints = crate::gpx::parse_waypoints(bytes);
-    let metadata = crate::gpx::parse_metadata(bytes);
-    let weather = crate::pace_model::WeatherLookup::empty();
+/// or `null` when the GPX contains no valid track-points or `options` is malformed.
+#[wasm_bindgen(js_name = "analyzeGpx")]
+pub fn analyze_gpx(bytes: &[u8], options: JsValue) -> Option<JsValue> {
+    let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options).ok()?;
+    let trace = parse_wasm_trace(bytes)?;
 
-    let legs = crate::leg::compute_from_waypoints(&trace, &waypoints);
+    let analysis = compute_route_analysis(&trace, &options);
+    let result = WasmGpxFull {
+        trace: WasmTraceSummary {
+            total_distance_km: trace.inner.total_distance,
+            total_elevation_gain_m: trace.inner.total_elevation_gain,
+            total_elevation_loss_m: trace.inner.total_elevation_loss,
+            location_count: trace.inner.locations.len() as u32,
+        },
+        waypoints: analysis.waypoints,
+        legs: analysis.legs,
+        sections: analysis.sections,
+        stages: analysis.stages,
+        metadata: analysis.metadata,
+    };
+
+    serde_wasm_bindgen::to_value(&result).ok()
+}
+
+/// Parse GPX `bytes` into a `Trace`, including its waypoints and metadata.
+fn parse_wasm_trace(bytes: &[u8]) -> Option<Trace> {
+    let locations = crate::gpx::parse_trace_points(bytes);
+    let inner = core_build_trace(&locations).ok()?;
+    Some(Trace {
+        inner,
+        waypoints: crate::gpx::parse_waypoints(bytes),
+        metadata: crate::gpx::parse_metadata(bytes),
+    })
+}
+
+/// Shared implementation behind `analyzeGpx` and `Trace::analyze`.
+fn compute_route_analysis(trace: &Trace, options: &WasmAnalyzeOptions) -> WasmRouteAnalysis {
+    let weather = options.weather_lookup();
+
+    let legs = crate::leg::compute_from_waypoints(&trace.inner, &trace.waypoints);
     let sections = crate::section::compute_from_waypoints(
-        &trace,
-        &waypoints,
-        base_pace_s_per_km,
-        k_fatigue,
-        life_base_stop_s,
+        &trace.inner,
+        &trace.waypoints,
+        options.base_pace_s_per_km,
+        options.k_fatigue,
+        options.life_base_stop_s,
         &weather,
     );
     let stages = crate::stage::compute_from_waypoints(
-        &trace,
-        &waypoints,
-        base_pace_s_per_km,
-        k_fatigue,
-        life_base_stop_s,
+        &trace.inner,
+        &trace.waypoints,
+        options.base_pace_s_per_km,
+        options.k_fatigue,
+        options.life_base_stop_s,
         &weather,
     );
 
-    let result = WasmGpxFull {
-        trace: WasmTraceSummary {
-            total_distance_km: trace.total_distance,
-            total_elevation_gain_m: trace.total_elevation_gain,
-            total_elevation_loss_m: trace.total_elevation_loss,
-            location_count: trace.locations.len() as u32,
-        },
-        waypoints: waypoints
+    WasmRouteAnalysis {
+        waypoints: trace
+            .waypoints
             .iter()
             .map(|w| WasmWaypoint {
                 latitude: w.latitude,
@@ -76,14 +101,14 @@ pub fn parse_gpx_full(
             })
             .collect(),
         legs: legs
-            .iter()
+            .into_iter()
             .map(|l| WasmLegStats {
                 leg_id: l.leg_id as u32,
                 section_idx: l.section_idx as u32,
                 start_index: l.start_index as u32,
                 end_index: l.end_index as u32,
-                start_location: l.start_location.clone(),
-                end_location: l.end_location.clone(),
+                start_location: l.start_location,
+                end_location: l.end_location,
                 total_distance_km: l.total_distance_km,
                 total_elevation_gain_m: l.total_elevation_gain_m,
                 total_elevation_loss_m: l.total_elevation_loss_m,
@@ -97,14 +122,14 @@ pub fn parse_gpx_full(
             })
             .collect(),
         sections: sections.map(|ss| {
-            ss.iter()
-                .map(|s| WasmIntervalStats {
+            ss.into_iter()
+                .map(|s| WasmSectionStats {
                     id: s.section_id as u32,
-                    group_idx: s.stage_idx as u32,
+                    stage_idx: s.stage_idx as u32,
                     start_index: s.start_index as u32,
                     end_index: s.end_index as u32,
-                    start_location: s.start_location.clone(),
-                    end_location: s.end_location.clone(),
+                    start_location: s.start_location,
+                    end_location: s.end_location,
                     total_distance_km: s.total_distance_km,
                     total_elevation_gain_m: s.total_elevation_gain_m,
                     total_elevation_loss_m: s.total_elevation_loss_m,
@@ -125,14 +150,13 @@ pub fn parse_gpx_full(
                 .collect()
         }),
         stages: stages.map(|ss| {
-            ss.iter()
-                .map(|s| WasmIntervalStats {
+            ss.into_iter()
+                .map(|s| WasmStageStats {
                     id: s.stage_id as u32,
-                    group_idx: 0,
                     start_index: s.start_index as u32,
                     end_index: s.end_index as u32,
-                    start_location: s.start_location.clone(),
-                    end_location: s.end_location.clone(),
+                    start_location: s.start_location,
+                    end_location: s.end_location,
                     total_distance_km: s.total_distance_km,
                     total_elevation_gain_m: s.total_elevation_gain_m,
                     total_elevation_loss_m: s.total_elevation_loss_m,
@@ -153,15 +177,170 @@ pub fn parse_gpx_full(
                 .collect()
         }),
         metadata: WasmGpxMetadata {
-            name: metadata.name,
-            description: metadata.description,
+            name: trace.metadata.name.clone(),
+            description: trace.metadata.description.clone(),
         },
-    };
-
-    serde_wasm_bindgen::to_value(&result).ok()
+    }
 }
 
-// ── Serializable output types for parseGpxFull ────────────────────────────────
+// ── Options for analyzeGpx / Trace::analyze ───────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WasmWeatherEntry {
+    name: String,
+    temperature_c: f64,
+    humidity_pct: f64,
+    wind_kmh: f64,
+    precip_prob_pct: f64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WasmAnalyzeOptions {
+    base_pace_s_per_km: f64,
+    k_fatigue: f64,
+    life_base_stop_s: u32,
+    #[serde(default)]
+    weather: Vec<WasmWeatherEntry>,
+}
+
+impl WasmAnalyzeOptions {
+    fn weather_lookup(&self) -> WeatherLookup {
+        if self.weather.is_empty() {
+            return WeatherLookup::empty();
+        }
+        let (names, values) = self
+            .weather
+            .iter()
+            .map(|w| {
+                (
+                    w.name.clone(),
+                    WeatherConditions {
+                        temperature_c: w.temperature_c,
+                        humidity_pct: w.humidity_pct,
+                        wind_kmh: w.wind_kmh,
+                        precip_prob_pct: w.precip_prob_pct,
+                    },
+                )
+            })
+            .unzip();
+        WeatherLookup::new(names, values)
+    }
+}
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::*;
+
+    // 5 track-points plus 3 typed waypoints (Start / LifeBase / Arrival),
+    // each waypoint coinciding exactly with a track-point so
+    // `find_closest_point_from` resolves to distinct, increasing indices.
+    const SAMPLE_GPX: &[u8] = br#"<?xml version="1.0"?>
+<gpx>
+<trk><trkseg>
+<trkpt lat="45.000" lon="7.000"><ele>1000</ele></trkpt>
+<trkpt lat="45.010" lon="7.010"><ele>1100</ele></trkpt>
+<trkpt lat="45.020" lon="7.020"><ele>1050</ele></trkpt>
+<trkpt lat="45.030" lon="7.030"><ele>1200</ele></trkpt>
+<trkpt lat="45.040" lon="7.040"><ele>1150</ele></trkpt>
+</trkseg></trk>
+<wpt lat="45.000" lon="7.000"><name>Start</name><type>Start</type><time>2025-11-20T06:00:00Z</time></wpt>
+<wpt lat="45.020" lon="7.020"><name>Life Base</name><type>LifeBase</type><time>2025-11-20T10:00:00Z</time><stopDuration>1800</stopDuration></wpt>
+<wpt lat="45.040" lon="7.040"><name>Arrival</name><type>Arrival</type><time>2025-11-20T16:00:00Z</time></wpt>
+</gpx>"#;
+
+    fn sample_options() -> WasmAnalyzeOptions {
+        WasmAnalyzeOptions {
+            base_pace_s_per_km: 500.0,
+            k_fatigue: 0.002,
+            life_base_stop_s: 3600,
+            weather: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parse_gpx_stores_waypoints_and_metadata_on_the_trace() {
+        let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
+        assert_eq!(trace.inner.locations.len(), 5);
+        assert_eq!(trace.waypoints.len(), 3);
+        assert_eq!(trace.waypoints[0].name, "Start");
+        // No <metadata> block in the fixture, so parse_metadata falls back to
+        // the first <name> anywhere in the document — here, the waypoint's.
+        assert_eq!(trace.metadata.name.as_deref(), Some("Start"));
+    }
+
+    #[test]
+    fn analyze_computes_legs_sections_and_stages_from_a_parsed_trace() {
+        let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
+        let analysis = compute_route_analysis(&trace, &sample_options());
+
+        assert_eq!(analysis.waypoints.len(), 3);
+        assert_eq!(analysis.legs.len(), 2);
+
+        let sections = analysis
+            .sections
+            .expect("3 typed waypoints should yield sections");
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].stage_idx, 0);
+        // Start (06:00) -> LifeBase (10:00): a 4h cutoff window.
+        assert_eq!(sections[0].max_completion_time, Some(4 * 3600));
+
+        let stages = analysis
+            .stages
+            .expect("Start/LifeBase/Arrival should yield stages");
+        assert_eq!(stages.len(), 2);
+    }
+
+    #[test]
+    fn build_trace_path_has_no_waypoints_so_analyze_returns_empty_route_data() {
+        let flat = [7.0, 45.0, 1000.0, 7.01, 45.01, 1100.0];
+        let trace = build_trace(&flat).expect("flat coords should build a trace");
+        let analysis = compute_route_analysis(&trace, &sample_options());
+
+        assert!(analysis.waypoints.is_empty());
+        assert!(analysis.legs.is_empty());
+        assert!(analysis.sections.is_none());
+        assert!(analysis.stages.is_none());
+    }
+}
+
+#[cfg(test)]
+mod analyze_options_tests {
+    use super::*;
+
+    #[test]
+    fn weather_lookup_empty_when_no_entries() {
+        let options = WasmAnalyzeOptions {
+            base_pace_s_per_km: 500.0,
+            k_fatigue: 0.002,
+            life_base_stop_s: 3600,
+            weather: Vec::new(),
+        };
+        assert!((options.weather_lookup().factor_for("anything") - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn weather_lookup_converts_entries_and_matches_by_name() {
+        let options = WasmAnalyzeOptions {
+            base_pace_s_per_km: 500.0,
+            k_fatigue: 0.002,
+            life_base_stop_s: 3600,
+            weather: vec![WasmWeatherEntry {
+                name: "Chamonix".into(),
+                temperature_c: 32.0,
+                humidity_pct: 85.0,
+                wind_kmh: 35.0,
+                precip_prob_pct: 80.0,
+            }],
+        };
+        let lookup = options.weather_lookup();
+        assert!(lookup.factor_for("Chamonix") > 1.0);
+        assert!((lookup.factor_for("Unknown") - 1.0).abs() < 1e-9);
+    }
+}
+
+// ── Serializable output types for analyzeGpx / Trace::analyze ────────────────
 
 #[derive(serde::Serialize)]
 struct WasmTraceSummary {
@@ -203,10 +382,35 @@ struct WasmLegStats {
 }
 
 #[derive(serde::Serialize)]
-struct WasmIntervalStats {
+struct WasmSectionStats {
     id: u32,
-    /// stage_idx for sections, 0 for stages.
-    group_idx: u32,
+    /// Index of the stage this section belongs to.
+    stage_idx: u32,
+    start_index: u32,
+    end_index: u32,
+    start_location: String,
+    end_location: String,
+    total_distance_km: f64,
+    total_elevation_gain_m: f64,
+    total_elevation_loss_m: f64,
+    avg_slope: f64,
+    max_slope: f64,
+    min_elevation: f64,
+    max_elevation: f64,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    bearing: f64,
+    difficulty: u8,
+    estimated_duration_s: f64,
+    pace_factor: f64,
+    max_completion_time: Option<i64>,
+    cutoff_ratio: Option<f64>,
+    stop_duration: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct WasmStageStats {
+    id: u32,
     start_index: u32,
     end_index: u32,
     start_location: String,
@@ -236,12 +440,21 @@ struct WasmGpxMetadata {
 }
 
 #[derive(serde::Serialize)]
+struct WasmRouteAnalysis {
+    waypoints: Vec<WasmWaypoint>,
+    legs: Vec<WasmLegStats>,
+    sections: Option<Vec<WasmSectionStats>>,
+    stages: Option<Vec<WasmStageStats>>,
+    metadata: WasmGpxMetadata,
+}
+
+#[derive(serde::Serialize)]
 struct WasmGpxFull {
     trace: WasmTraceSummary,
     waypoints: Vec<WasmWaypoint>,
     legs: Vec<WasmLegStats>,
-    sections: Option<Vec<WasmIntervalStats>>,
-    stages: Option<Vec<WasmIntervalStats>>,
+    sections: Option<Vec<WasmSectionStats>>,
+    stages: Option<Vec<WasmStageStats>>,
     metadata: WasmGpxMetadata,
 }
 
@@ -249,11 +462,14 @@ struct WasmGpxFull {
 /// `[lon₀, lat₀, alt₀,  lon₁, lat₁, alt₁, …]`.
 ///
 /// Data is copied from JS memory into WASM once here; all subsequent work
-/// stays inside WASM.  Returns a `WasmTrace` class instance whose methods can
+/// stays inside WASM.  Returns a `Trace` class instance whose methods can
 /// be called with near-zero boundary overhead, or `null` if `flat` carries no
 /// points.
+///
+/// There's no GPX source here, so `.analyze()` on this trace will see no
+/// waypoints (empty `legs`, `sections`/`stages` both `null`).
 #[wasm_bindgen(js_name = "buildTrace")]
-pub fn build_trace(flat: &[f64]) -> Option<WasmTrace> {
+pub fn build_trace(flat: &[f64]) -> Option<Trace> {
     let locations: Vec<Location> = flat
         .chunks_exact(3)
         .map(|c| Location {
@@ -262,12 +478,17 @@ pub fn build_trace(flat: &[f64]) -> Option<WasmTrace> {
             altitude: c[2],
         })
         .collect();
-    core_build_trace(&locations)
-        .ok()
-        .map(|inner| WasmTrace { inner })
+    core_build_trace(&locations).ok().map(|inner| Trace {
+        inner,
+        waypoints: Vec::new(),
+        metadata: crate::gpx::GpxMetadata {
+            name: None,
+            description: None,
+        },
+    })
 }
 
-// ── WasmTrace class ───────────────────────────────────────────────────────────
+// ── Trace class ───────────────────────────────────────────────────────────
 
 /// Opaque handle to a computed `Trace` that lives entirely in WASM memory.
 ///
@@ -280,12 +501,14 @@ pub fn build_trace(flat: &[f64]) -> Option<WasmTrace> {
 /// registry.register(trace, trace);
 /// ```
 #[wasm_bindgen]
-pub struct WasmTrace {
+pub struct Trace {
     inner: crate::trace::Trace,
+    waypoints: Vec<crate::waypoint::Waypoint>,
+    metadata: crate::gpx::GpxMetadata,
 }
 
 #[wasm_bindgen]
-impl WasmTrace {
+impl Trace {
     // ── Scalar getters — free boundary crossing (passed in registers) ──────────
 
     #[wasm_bindgen(getter)]
@@ -435,6 +658,20 @@ impl WasmTrace {
     /// `[{ start_index, end_index, start_dist_km, climb_dist_km, elevation_gain, summit_elev, avg_gradient }, …]`
     pub fn climbs(&self) -> JsValue {
         serde_wasm_bindgen::to_value(&self.inner.climbs).unwrap_or(JsValue::UNDEFINED)
+    }
+
+    /// Compute the race analysis (waypoints, legs, sections, stages) using
+    /// this trace's waypoints (parsed once by `parseGpx`). Pure
+    /// opaque-handle-in, JSON-out — no bytes cross the boundary again, and
+    /// the expensive trace computation (simplification, elevation, climbs)
+    /// is never repeated.
+    ///
+    /// Returns a JS object with `{ waypoints, legs, sections, stages, metadata }`
+    /// or `null` when `options` is malformed.
+    pub fn analyze(&self, options: JsValue) -> Option<JsValue> {
+        let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options).ok()?;
+        let analysis = compute_route_analysis(self, &options);
+        serde_wasm_bindgen::to_value(&analysis).ok()
     }
 }
 
