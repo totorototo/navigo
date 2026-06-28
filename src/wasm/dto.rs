@@ -1,3 +1,4 @@
+use crate::calibration::Recalibration;
 use crate::gpx::GpxMetadata;
 use crate::leg::LegStats;
 use crate::section::SectionStats;
@@ -264,5 +265,24 @@ impl WasmGpxFull {
             stages: analysis.stages,
             metadata: analysis.metadata,
         }
+    }
+}
+
+// ── Output type for Trace::recalibrate ────────────────────────────────────────
+
+/// Live recalibration result at both granularities — `Recalibration` already
+/// serializes to the snake_case shape JS expects, so this just pairs the two
+/// `recalibrate_from_current` calls (section vs. stage boundaries) that share
+/// one GPS update but solve independent calibration factors (weather is
+/// looked up per-range, and ranges differ between the two boundary kinds).
+#[derive(serde::Serialize)]
+pub(crate) struct WasmRecalibration {
+    sections: Option<Recalibration>,
+    stages: Option<Recalibration>,
+}
+
+impl WasmRecalibration {
+    pub(crate) fn new(sections: Option<Recalibration>, stages: Option<Recalibration>) -> Self {
+        Self { sections, stages }
     }
 }

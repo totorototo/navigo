@@ -1,13 +1,17 @@
 use wasm_bindgen::prelude::*;
 
+use crate::calibration::{self, BoundaryKind};
 use crate::{build_trace as core_build_trace, Location};
 
 mod dto;
 mod options;
 mod trace;
 
-use dto::{WasmGpxFull, WasmRouteAnalysis, WasmSectionStats, WasmStageStats, WasmTraceSummary};
-use options::WasmAnalyzeOptions;
+use dto::{
+    WasmGpxFull, WasmRecalibration, WasmRouteAnalysis, WasmSectionStats, WasmStageStats,
+    WasmTraceSummary,
+};
+use options::{WasmAnalyzeOptions, WasmRecalibrateOptions};
 pub use trace::Trace;
 
 // ── Public entry points ───────────────────────────────────────────────────────
@@ -122,6 +126,41 @@ fn compute_route_analysis(trace: &Trace, options: &WasmAnalyzeOptions) -> WasmRo
     )
 }
 
+/// Shared implementation behind `Trace::recalibrate`.
+///
+/// Runs `recalibrate_from_current` once per boundary kind — sections
+/// (checkpoint granularity) and stages (LifeBase granularity) — since each
+/// re-solves its own calibration factor against its own weather-per-range
+/// lookups rather than sharing one result.
+fn compute_recalibration(trace: &Trace, options: &WasmRecalibrateOptions) -> WasmRecalibration {
+    let weather = options.weather_lookup();
+
+    let sections = calibration::recalibrate_from_current(
+        trace.inner(),
+        trace.waypoints(),
+        BoundaryKind::Section,
+        options.current_index(),
+        options.actual_elapsed_s(),
+        options.base_pace_s_per_km(),
+        options.k_fatigue(),
+        options.life_base_stop_s(),
+        &weather,
+    );
+    let stages = calibration::recalibrate_from_current(
+        trace.inner(),
+        trace.waypoints(),
+        BoundaryKind::Stage,
+        options.current_index(),
+        options.actual_elapsed_s(),
+        options.base_pace_s_per_km(),
+        options.k_fatigue(),
+        options.life_base_stop_s(),
+        &weather,
+    );
+
+    WasmRecalibration::new(sections, stages)
+}
+
 #[cfg(test)]
 mod pipeline_tests {
     use super::*;
@@ -188,6 +227,40 @@ mod pipeline_tests {
 
         assert!(json["waypoints"].as_array().unwrap().is_empty());
         assert!(json["legs"].as_array().unwrap().is_empty());
+        assert!(json["sections"].is_null());
+        assert!(json["stages"].is_null());
+    }
+
+    // Asserts on the serialized JSON shape (what JS actually receives) rather
+    // than poking at DTO internals, so the DTOs don't need test-only accessors.
+    #[test]
+    fn recalibrate_computes_section_and_stage_etas_from_a_parsed_trace() {
+        let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
+        // current_index=2 puts the runner mid-route; actual_elapsed_s well above
+        // the 300s gate so a non-trivial calibration factor is solved.
+        let recalibration =
+            compute_recalibration(&trace, &WasmRecalibrateOptions::sample(2, 3600.0));
+        let json = serde_json::to_value(&recalibration).expect("recalibration should serialize");
+
+        let sections = json["sections"]
+            .as_object()
+            .expect("Start/LifeBase/Arrival should yield section etas");
+        assert_eq!(sections["etas"].as_array().unwrap().len(), 2);
+        assert!(sections["calibration_factor"].as_f64().unwrap() > 0.0);
+
+        let stages = json["stages"]
+            .as_object()
+            .expect("Start/LifeBase/Arrival should yield stage etas");
+        assert_eq!(stages["etas"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn recalibrate_returns_null_for_both_kinds_with_fewer_than_two_boundaries() {
+        let flat = [7.0, 45.0, 1000.0, 7.01, 45.01, 1100.0];
+        let trace = build_trace(&flat).expect("flat coords should build a trace");
+        let recalibration = compute_recalibration(&trace, &WasmRecalibrateOptions::sample(0, 0.0));
+        let json = serde_json::to_value(&recalibration).expect("recalibration should serialize");
+
         assert!(json["sections"].is_null());
         assert!(json["stages"].is_null());
     }

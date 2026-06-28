@@ -501,12 +501,42 @@ const analysis = trace.analyze(options);
 //   }
 //   or null on malformed options
 
-trace.free();
-
 // Or, if you just want the JSON in one call and don't need the Trace handle:
 const full = analyzeGpx(bytes, options);
 // → { trace: { total_distance_km, total_elevation_gain_m, … }, ...analysis }
 //   or null on parse failure
+```
+
+**Live recalibration (`trace.recalibrate()`)**
+
+Once the race clock has started and the runner has a GPS fix, correct the
+static `.analyze()` prediction against actual progress — see
+[Live calibration](#live-calibration) above for the underlying model.
+
+```js
+const currentIndex = trace.find_closest_point(lon, lat, alt)?.index;
+
+const recalibration = trace.recalibrate({
+  basePaceSPerKm: 500,
+  kFatigue: 0.002,
+  lifeBaseStopS: 3600,
+  currentIndex,
+  actualElapsedS: 5400, // real seconds since race start
+});
+// → {
+//     sections: { calibration_factor, calibrated_base_pace_s_per_km,
+//                  predicted_so_far_s, actual_elapsed_s,
+//                  etas: [{ id, end_index, remaining_duration_s, cumulative_remaining_s }, …] } | null,
+//     stages:   { …same shape, at Start/LifeBase/Arrival granularity } | null,
+//   }
+//   or null on malformed options
+//
+// `sections` and `stages` solve independent calibration factors — each
+// re-predicts at its own boundary granularity, with its own per-range
+// weather lookup. Either is null when that boundary kind has fewer than
+// 2 typed waypoints.
+
+trace.free();
 ```
 
 ### memory management

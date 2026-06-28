@@ -252,6 +252,56 @@ Race analysis (waypoints, legs, sections, stages) — see
 [`trace.analyze(options)`](#traceanalyzeoptions-object--null) above for the
 full shape and `options` reference.
 
+#### `recalibrate(options): object | null`
+
+Live, mid-race ETA recalibration — corrects the static `.analyze()`
+prediction against the runner's actual progress. Compares `actualElapsedS`
+against what the model predicted for the distance covered to solve a
+calibration factor, then re-predicts remaining sections/stages with the
+pace re-anchored to it and the circadian clock re-seeded to real elapsed
+time. Returns `null` on malformed `options`.
+
+```js
+const currentIndex = trace.find_closest_point(lon, lat, alt)?.index;
+
+const recalibration = trace.recalibrate({
+  basePaceSPerKm: 500,
+  kFatigue: 0.002,
+  lifeBaseStopS: 3600,
+  currentIndex,
+  actualElapsedS: 5400, // real seconds elapsed since race start
+});
+// recalibration.sections — RecalibratedEtas | null  (checkpoint granularity)
+// recalibration.stages   — RecalibratedEtas | null  (LifeBase granularity)
+trace.free();
+```
+
+`sections` and `stages` solve independent calibration factors — each
+re-predicts at its own boundary granularity with its own per-range weather
+lookup. Either is `null` when that boundary kind has fewer than 2 typed
+waypoints (e.g. a `Trace` with no GPX-sourced waypoints).
+
+**`options`** — same `basePaceSPerKm` / `kFatigue` / `lifeBaseStopS` /
+`weather` as [`analyze`](#options) above, plus:
+
+| Field            | Type     | Description                                          |
+| ---------------- | -------- | ----------------------------------------------------- |
+| `currentIndex`   | `number` | Runner's current trace index (e.g. from `find_closest_point`) |
+| `actualElapsedS` | `number` | Real seconds elapsed since race start                |
+
+**`RecalibratedEtas`**
+
+```ts
+{ calibration_factor: number, calibrated_base_pace_s_per_km: number,
+  predicted_so_far_s: number, actual_elapsed_s: number,
+  etas: { id: number, end_index: number, remaining_duration_s: number,
+          cumulative_remaining_s: number }[] }
+```
+
+The factor is `actualElapsedS / predictedSoFar`, clamped to `[0.5, 3.0]`
+and ignored (kept at `1.0`) below 300s of predicted effort — too noisy
+otherwise.
+
 #### `free(): void`
 
 Release WASM memory. **Required** — Rust's allocator has no GC bridge.

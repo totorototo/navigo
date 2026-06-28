@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::Location;
 
-use super::options::WasmAnalyzeOptions;
+use super::options::{WasmAnalyzeOptions, WasmRecalibrateOptions};
 
 // ── Trace class ───────────────────────────────────────────────────────────
 
@@ -217,6 +217,25 @@ impl Trace {
         let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options).ok()?;
         let analysis = super::compute_route_analysis(self, &options);
         serde_wasm_bindgen::to_value(&analysis).ok()
+    }
+
+    /// Live, mid-race ETA recalibration — corrects the static `.analyze()`
+    /// prediction against the runner's actual progress so far.
+    ///
+    /// `options` — a JS object: `{ basePaceSPerKm, kFatigue, lifeBaseStopS,
+    /// currentIndex, actualElapsedS, weather? }`. `currentIndex` is the
+    /// runner's current point on this trace (e.g. from `find_closest_point`);
+    /// `actualElapsedS` is real seconds elapsed since race start.
+    ///
+    /// Returns `{ sections, stages }`, each either `null` (fewer than 2
+    /// boundaries of that kind) or `{ calibration_factor,
+    /// calibrated_base_pace_s_per_km, predicted_so_far_s, actual_elapsed_s,
+    /// etas: [{ id, end_index, remaining_duration_s, cumulative_remaining_s }, …] }`.
+    /// Returns `null` when `options` is malformed.
+    pub fn recalibrate(&self, options: JsValue) -> Option<JsValue> {
+        let options: WasmRecalibrateOptions = serde_wasm_bindgen::from_value(options).ok()?;
+        let recalibration = super::compute_recalibration(self, &options);
+        serde_wasm_bindgen::to_value(&recalibration).ok()
     }
 }
 
