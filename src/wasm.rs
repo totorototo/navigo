@@ -208,9 +208,9 @@ mod pipeline_tests {
             .as_array()
             .expect("3 typed waypoints should yield sections");
         assert_eq!(sections.len(), 2);
-        assert_eq!(sections[0]["stage_idx"], 0);
+        assert_eq!(sections[0]["stageIdx"], 0);
         // Start (06:00) -> LifeBase (10:00): a 4h cutoff window.
-        assert_eq!(sections[0]["max_completion_time"], 4 * 3600);
+        assert_eq!(sections[0]["maxCompletionTime"], 4 * 3600);
 
         let stages = json["stages"]
             .as_array()
@@ -246,7 +246,7 @@ mod pipeline_tests {
             .as_object()
             .expect("Start/LifeBase/Arrival should yield section etas");
         assert_eq!(sections["etas"].as_array().unwrap().len(), 2);
-        assert!(sections["calibration_factor"].as_f64().unwrap() > 0.0);
+        assert!(sections["calibrationFactor"].as_f64().unwrap() > 0.0);
 
         let stages = json["stages"]
             .as_object()

@@ -8,6 +8,7 @@ use crate::waypoint::Waypoint;
 // ── Serializable output types for analyzeGpx / Trace::analyze ────────────────
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmTraceSummary {
     total_distance_km: f64,
     total_elevation_gain_m: f64,
@@ -27,6 +28,7 @@ impl From<&crate::trace::Trace> for WasmTraceSummary {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmWaypoint {
     latitude: f64,
     longitude: f64,
@@ -52,6 +54,7 @@ impl From<&Waypoint> for WasmWaypoint {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmLegStats {
     leg_id: u32,
     section_idx: u32,
@@ -95,6 +98,7 @@ impl From<LegStats> for WasmLegStats {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmSectionStats {
     id: u32,
     /// Index of the stage this section belongs to.
@@ -151,6 +155,7 @@ impl From<SectionStats> for WasmSectionStats {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmStageStats {
     id: u32,
     start_index: u32,
@@ -204,6 +209,7 @@ impl From<StageStats> for WasmStageStats {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmGpxMetadata {
     name: Option<String>,
     description: Option<String>,
@@ -219,6 +225,7 @@ impl From<&GpxMetadata> for WasmGpxMetadata {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmRouteAnalysis {
     waypoints: Vec<WasmWaypoint>,
     legs: Vec<WasmLegStats>,
@@ -246,6 +253,7 @@ impl WasmRouteAnalysis {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmGpxFull {
     trace: WasmTraceSummary,
     waypoints: Vec<WasmWaypoint>,
@@ -276,6 +284,7 @@ impl WasmGpxFull {
 /// one GPS update but solve independent calibration factors (weather is
 /// looked up per-range, and ranges differ between the two boundary kinds).
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WasmRecalibration {
     sections: Option<Recalibration>,
     stages: Option<Recalibration>,

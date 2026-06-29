@@ -56,23 +56,23 @@ impl Trace {
 impl Trace {
     // ── Scalar getters — free boundary crossing (passed in registers) ──────────
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "totalDistance")]
     pub fn total_distance(&self) -> f64 {
         self.inner.total_distance
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "totalElevationGain")]
     pub fn total_elevation_gain(&self) -> f64 {
         self.inner.total_elevation_gain
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "totalElevationLoss")]
     pub fn total_elevation_loss(&self) -> f64 {
         self.inner.total_elevation_loss
     }
 
     /// Number of (possibly D-P simplified) locations.
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "locationCount")]
     pub fn location_count(&self) -> u32 {
         self.inner.locations.len() as u32
     }
@@ -80,7 +80,7 @@ impl Trace {
     // ── Array getters — O(n) copy from WASM → JS heap; call once and cache ────
 
     /// Flat `Float64Array` `[lon₀, lat₀, alt₀,  lon₁, lat₁, alt₁, …]`.
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "locationsFlat")]
     pub fn locations_flat(&self) -> Vec<f64> {
         self.inner
             .locations
@@ -89,17 +89,17 @@ impl Trace {
             .collect()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "cumulativeDistances")]
     pub fn cumulative_distances(&self) -> Vec<f64> {
         self.inner.cumulative_distances.clone()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "cumulativeElevationGains")]
     pub fn cumulative_elevation_gains(&self) -> Vec<f64> {
         self.inner.cumulative_elevation_gains.clone()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "cumulativeElevationLosses")]
     pub fn cumulative_elevation_losses(&self) -> Vec<f64> {
         self.inner.cumulative_elevation_losses.clone()
     }
@@ -124,12 +124,14 @@ impl Trace {
     // ── Query methods — scalars in, cheap crossing; complex results via serde ──
 
     /// Index of the first location at or beyond `dist_km`.
+    #[wasm_bindgen(js_name = "indexAtDistance")]
     pub fn index_at_distance(&self, dist_km: f64) -> u32 {
         self.inner.index_at_distance(dist_km) as u32
     }
 
     /// Returns `{ longitude, latitude, altitude }`, or `undefined` when the
     /// distance is negative / the trace has no matching point.
+    #[wasm_bindgen(js_name = "pointAtDistance")]
     pub fn point_at_distance(&self, dist_km: f64) -> Option<JsValue> {
         self.inner
             .point_at_distance(dist_km)
@@ -138,6 +140,7 @@ impl Trace {
 
     /// Returns `{ location: { longitude, latitude, altitude }, index, distance }`,
     /// or `undefined` when no closest point is found.
+    #[wasm_bindgen(js_name = "findClosestPoint")]
     pub fn find_closest_point(
         &self,
         longitude: f64,
@@ -154,6 +157,7 @@ impl Trace {
 
     /// Like `find_closest_point` but only searches from `start_from` onwards —
     /// use this on live-tracking loops to avoid snapping to an earlier position.
+    #[wasm_bindgen(js_name = "findClosestPointFrom")]
     pub fn find_closest_point_from(
         &self,
         longitude: f64,
@@ -174,6 +178,7 @@ impl Trace {
 
     /// Flat `Float64Array` `[lon, lat, alt, …]` for all points between the two
     /// cumulative distances, or `undefined` on invalid input.
+    #[wasm_bindgen(js_name = "sliceBetweenDistances")]
     pub fn slice_between_distances(&self, start_km: f64, end_km: f64) -> Option<Vec<f64>> {
         self.inner
             .slice_between_distances(start_km, end_km)
@@ -182,6 +187,7 @@ impl Trace {
 
     /// Flat `Float64Array` `[lon, lat, alt, …]` for the index range (inclusive).
     /// Throws on out-of-bounds or invalid input.
+    #[wasm_bindgen(js_name = "getSection")]
     pub fn get_section(&self, start_index: u32, end_index: u32) -> Result<Vec<f64>, JsError> {
         self.inner
             .get_section(start_index as usize, end_index as usize)

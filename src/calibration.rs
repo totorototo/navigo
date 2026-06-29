@@ -28,6 +28,7 @@ fn is_boundary(wpt: &Waypoint, kind: &BoundaryKind) -> bool {
 
 /// Recalibrated ETA for one interval, relative to the runner's current position.
 #[cfg_attr(feature = "wasm", derive(serde::Serialize))]
+#[cfg_attr(feature = "wasm", serde(rename_all = "camelCase"))]
 pub struct RecalibratedEta {
     pub id: usize,
     pub end_index: usize,
@@ -39,6 +40,7 @@ pub struct RecalibratedEta {
 
 /// Result of a live recalibration. Caller owns this value.
 #[cfg_attr(feature = "wasm", derive(serde::Serialize))]
+#[cfg_attr(feature = "wasm", serde(rename_all = "camelCase"))]
 pub struct Recalibration {
     /// actual_elapsed / predicted_so_far (clamped + gated); 1.0 when not yet trusted.
     pub calibration_factor: f64,

@@ -24,8 +24,8 @@ if (!trace || !full) {
 }
 
 // Cache all bulk arrays once — each getter copies WASM→JS heap.
-const locsFlat = trace.locations_flat;
-const dists = trace.cumulative_distances;
+const locsFlat = trace.locationsFlat;
+const dists = trace.cumulativeDistances;
 const peaks = trace.peaks;
 const valleys = trace.valleys;
 const climbs = trace.climbs();
@@ -37,17 +37,17 @@ setText("race-title", full.metadata.name || "");
 
 // ── Stats cards ───────────────────────────────────────────────────────────────
 
-setText("stat-distance", trace.total_distance.toFixed(1) + " km");
-setText("stat-gain", "+" + Math.round(trace.total_elevation_gain) + " m");
-setText("stat-loss", "−" + Math.round(trace.total_elevation_loss) + " m");
-setText("stat-locations", trace.location_count.toString());
+setText("stat-distance", trace.totalDistance.toFixed(1) + " km");
+setText("stat-gain", "+" + Math.round(trace.totalElevationGain) + " m");
+setText("stat-loss", "−" + Math.round(trace.totalElevationLoss) + " m");
+setText("stat-locations", trace.locationCount.toString());
 setText("stat-climbs", climbs.length.toString());
 
 if (area) {
   setText(
     "stat-bbox",
-    `${area.min_latitude.toFixed(3)}°N – ${area.max_latitude.toFixed(3)}°N, ` +
-      `${area.min_longitude.toFixed(3)}°E – ${area.max_longitude.toFixed(3)}°E`,
+    `${area.minLatitude.toFixed(3)}°N – ${area.maxLatitude.toFixed(3)}°N, ` +
+      `${area.minLongitude.toFixed(3)}°E – ${area.maxLongitude.toFixed(3)}°E`,
   );
 }
 
@@ -149,7 +149,7 @@ function renderWaypoints(waypoints) {
           <tr>
             <td class="num" data-label="#">${String(i + 1).padStart(2, "0")}</td>
             <td data-label="Name">${w.name}</td>
-            <td data-label="Type"><span class="type-badge ${typeClass(w.wpt_type)}">${typeLabel(w.wpt_type)}</span></td>
+            <td data-label="Type"><span class="type-badge ${typeClass(w.wptType)}">${typeLabel(w.wptType)}</span></td>
             <td class="num" data-label="Elevation">${w.elevation != null ? Math.round(w.elevation) + " m" : "—"}</td>
             <td class="num" data-label="Cutoff">${formatTimestamp(w.time)}</td>
           </tr>`,
@@ -185,18 +185,18 @@ function renderSections(sections, waypoints) {
       <tbody>
         ${sections
           .map((s) => {
-            cumulativeKm += s.total_distance_km;
+            cumulativeKm += s.totalDistanceKm;
             const fromName = waypoints[s.id]?.name ?? "—";
             const toName = waypoints[s.id + 1]?.name ?? "—";
             return `
           <tr>
             <td class="num" data-label="#">${String(s.id + 1).padStart(2, "0")}</td>
             <td class="leg-label" data-label="From → To">${fromName} → ${toName}</td>
-            <td class="num" data-label="Dist.">${s.total_distance_km.toFixed(1)} km</td>
+            <td class="num" data-label="Dist.">${s.totalDistanceKm.toFixed(1)} km</td>
             <td class="num muted" data-label="Cum.">${cumulativeKm.toFixed(1)} km</td>
-            <td class="num gain" data-label="Gain">+${Math.round(s.total_elevation_gain_m)} m</td>
-            <td class="num loss" data-label="Loss">−${Math.round(s.total_elevation_loss_m)} m</td>
-            <td class="num" data-label="Est. time">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num gain" data-label="Gain">+${Math.round(s.totalElevationGainM)} m</td>
+            <td class="num loss" data-label="Loss">−${Math.round(s.totalElevationLossM)} m</td>
+            <td class="num" data-label="Est. time">${formatDuration(s.estimatedDurationS)}</td>
             <td class="num stars" data-label="Difficulty">${stars(s.difficulty)}</td>
           </tr>`;
           })
@@ -215,7 +215,7 @@ function renderStages(stages, waypoints) {
 
   const stageBoundaries = waypoints
     ? waypoints.filter((w) =>
-        ["Start", "LifeBase", "Arrival"].includes(w.wpt_type),
+        ["Start", "LifeBase", "Arrival"].includes(w.wptType),
       )
     : [];
 
@@ -241,10 +241,10 @@ function renderStages(stages, waypoints) {
           <tr>
             <td class="num" data-label="Stage">${String(s.id + 1).padStart(2, "0")}</td>
             <td class="leg-label" data-label="From → To">${fromName} → ${toName}</td>
-            <td class="num" data-label="Distance">${s.total_distance_km.toFixed(1)} km</td>
-            <td class="num gain" data-label="Gain">+${Math.round(s.total_elevation_gain_m)} m</td>
-            <td class="num loss" data-label="Loss">−${Math.round(s.total_elevation_loss_m)} m</td>
-            <td class="num" data-label="Est. time">${formatDuration(s.estimated_duration_s)}</td>
+            <td class="num" data-label="Distance">${s.totalDistanceKm.toFixed(1)} km</td>
+            <td class="num gain" data-label="Gain">+${Math.round(s.totalElevationGainM)} m</td>
+            <td class="num loss" data-label="Loss">−${Math.round(s.totalElevationLossM)} m</td>
+            <td class="num" data-label="Est. time">${formatDuration(s.estimatedDurationS)}</td>
             <td class="num stars" data-label="Difficulty">${stars(s.difficulty)}</td>
           </tr>`;
           })
@@ -287,8 +287,8 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   // ── Yellow climb zones (behind everything)
   climbs.forEach((c) => {
     ctx.fillStyle = "#ffe000";
-    const x1 = xP(c.start_dist_km);
-    const x2 = xP(c.start_dist_km + c.climb_dist_km);
+    const x1 = xP(c.startDistKm);
+    const x2 = xP(c.startDistKm + c.climbDistKm);
     ctx.fillRect(x1, PAD.top, x2 - x1, CH);
   });
 
@@ -390,9 +390,9 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   ctx.textBaseline = "bottom";
   ctx.font = "bold 10px Courier New, monospace";
   climbs.forEach((c) => {
-    const midX = xP(c.start_dist_km + c.climb_dist_km / 2);
+    const midX = xP(c.startDistKm + c.climbDistKm / 2);
     ctx.fillStyle = "#000";
-    ctx.fillText(`↑ ${c.avg_gradient.toFixed(1)}%`, midX, H - PAD.bottom - 4);
+    ctx.fillText(`↑ ${c.avgGradient.toFixed(1)}%`, midX, H - PAD.bottom - 4);
   });
 }
 
@@ -413,23 +413,23 @@ function renderClimbs(climbs) {
       <div class="climb-metrics">
         <div class="metric">
           <span class="label">dist</span>
-          <span class="val">${c.climb_dist_km.toFixed(1)}<small>km</small></span>
+          <span class="val">${c.climbDistKm.toFixed(1)}<small>km</small></span>
         </div>
         <div class="metric">
           <span class="label">gain</span>
-          <span class="val">+${Math.round(c.elevation_gain)}<small>m</small></span>
+          <span class="val">+${Math.round(c.elevationGain)}<small>m</small></span>
         </div>
         <div class="metric">
           <span class="label">grade</span>
-          <span class="val">${c.avg_gradient.toFixed(1)}<small>%</small></span>
+          <span class="val">${c.avgGradient.toFixed(1)}<small>%</small></span>
         </div>
         <div class="metric">
           <span class="label">summit</span>
-          <span class="val">${Math.round(c.summit_elev)}<small>m</small></span>
+          <span class="val">${Math.round(c.summitElev)}<small>m</small></span>
         </div>
         <div class="metric score">
           <span class="label">score</span>
-          <span class="val">${(c.climb_dist_km * c.avg_gradient).toFixed(0)}</span>
+          <span class="val">${(c.climbDistKm * c.avgGradient).toFixed(0)}</span>
         </div>
       </div>
     </div>
