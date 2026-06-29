@@ -133,6 +133,7 @@ pub struct GpxMetadata {
 }
 
 /// Combined GPX payload used by the full WASM analysis path.
+#[cfg(any(feature = "wasm", test))]
 pub(crate) struct ParsedGpx {
     pub locations: Vec<Location>,
     pub waypoints: Vec<Waypoint>,
@@ -140,6 +141,7 @@ pub(crate) struct ParsedGpx {
 }
 
 /// Parse track points, waypoints and metadata in a single pass.
+#[cfg(any(feature = "wasm", test))]
 pub(crate) fn parse_all(bytes: &[u8]) -> ParsedGpx {
     let mut locations = Vec::with_capacity(bytes.len() / 100);
     let mut waypoints = Vec::new();
