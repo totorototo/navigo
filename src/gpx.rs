@@ -777,5 +777,6 @@ mod tests {
             Some("Track description")
         );
         assert_eq!(parsed.locations.len(), 1);
+        assert!(parsed.waypoints.is_empty());
     }
 }
