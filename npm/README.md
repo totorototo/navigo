@@ -124,44 +124,44 @@ const result = analyzeGpx(bytes, {
 **`TraceSummary`**
 
 ```ts
-{ total_distance_km: number, total_elevation_gain_m: number,
-  total_elevation_loss_m: number, location_count: number }
+{ totalDistanceKm: number, totalElevationGainM: number,
+  totalElevationLossM: number, locationCount: number }
 ```
 
 **`Waypoint`**
 
 ```ts
 { latitude: number, longitude: number, elevation: number | null,
-  name: string, wpt_type: string | null, time: number | null,
-  stop_duration: number | null }
+  name: string, wptType: string | null, time: number | null,
+  stopDuration: number | null }
 ```
 
 **`LegStats`**
 
 ```ts
-{ leg_id: number, section_idx: number, start_index: number, end_index: number,
-  start_location: string, end_location: string,
-  total_distance_km: number, total_elevation_gain_m: number,
-  total_elevation_loss_m: number, avg_slope: number, max_slope: number,
-  min_elevation: number, max_elevation: number, bearing: number,
-  difficulty: number, estimated_duration_s: number }
+{ legId: number, sectionIdx: number, startIndex: number, endIndex: number,
+  startLocation: string, endLocation: string,
+  totalDistanceKm: number, totalElevationGainM: number,
+  totalElevationLossM: number, avgSlope: number, maxSlope: number,
+  minElevation: number, maxElevation: number, bearing: number,
+  difficulty: number, estimatedDurationS: number }
 ```
 
 **`SectionStats`**
 
 ```ts
-{ id: number, stage_idx: number, start_index: number, end_index: number,
-  start_location: string, end_location: string,
-  total_distance_km: number, total_elevation_gain_m: number,
-  total_elevation_loss_m: number, avg_slope: number, max_slope: number,
-  min_elevation: number, max_elevation: number, bearing: number,
-  difficulty: number, estimated_duration_s: number, pace_factor: number,
-  start_time: number | null, end_time: number | null,
-  max_completion_time: number | null, cutoff_ratio: number | null,
-  stop_duration: number | null }
+{ id: number, stageIdx: number, startIndex: number, endIndex: number,
+  startLocation: string, endLocation: string,
+  totalDistanceKm: number, totalElevationGainM: number,
+  totalElevationLossM: number, avgSlope: number, maxSlope: number,
+  minElevation: number, maxElevation: number, bearing: number,
+  difficulty: number, estimatedDurationS: number, paceFactor: number,
+  startTime: number | null, endTime: number | null,
+  maxCompletionTime: number | null, cutoffRatio: number | null,
+  stopDuration: number | null }
 ```
 
-**`StageStats`** — same shape as `SectionStats` minus `stage_idx`.
+**`StageStats`** — same shape as `SectionStats` minus `stageIdx`.
 
 ### `buildTrace(flat: Float64Array): Trace | null`
 
@@ -185,50 +185,50 @@ Always call `.free()` when done, or use a `FinalizationRegistry`.
 
 ### Properties (getters — copy WASM → JS heap; call once and cache)
 
-| Property                      | Type           | Description                             |
-| ----------------------------- | -------------- | --------------------------------------- |
-| `total_distance`              | `number`       | Total distance (km)                     |
-| `total_elevation_gain`        | `number`       | Cumulative elevation gain (m)           |
-| `total_elevation_loss`        | `number`       | Cumulative elevation loss (m)           |
-| `location_count`              | `number`       | Number of (D-P simplified) locations    |
-| `locations_flat`              | `Float64Array` | `[lon, lat, alt, …]` for every location |
-| `cumulative_distances`        | `Float64Array` | Distance at each location (km)          |
-| `cumulative_elevation_gains`  | `Float64Array` | Cumulative gain at each location (m)    |
-| `cumulative_elevation_losses` | `Float64Array` | Cumulative loss at each location (m)    |
-| `slopes`                      | `Float64Array` | Slope between consecutive locations (%) |
-| `peaks`                       | `Uint32Array`  | Peak location indices                   |
-| `valleys`                     | `Uint32Array`  | Valley location indices                 |
+| Property                       | Type           | Description                             |
+| ------------------------------ | -------------- | --------------------------------------- |
+| `totalDistance`                | `number`       | Total distance (km)                     |
+| `totalElevationGain`           | `number`       | Cumulative elevation gain (m)           |
+| `totalElevationLoss`           | `number`       | Cumulative elevation loss (m)           |
+| `locationCount`                | `number`       | Number of (D-P simplified) locations    |
+| `locationsFlat`                | `Float64Array` | `[lon, lat, alt, …]` for every location |
+| `cumulativeDistances`          | `Float64Array` | Distance at each location (km)          |
+| `cumulativeElevationGains`     | `Float64Array` | Cumulative gain at each location (m)    |
+| `cumulativeElevationLosses`    | `Float64Array` | Cumulative loss at each location (m)    |
+| `slopes`                       | `Float64Array` | Slope between consecutive locations (%) |
+| `peaks`                        | `Uint32Array`  | Peak location indices                   |
+| `valleys`                      | `Uint32Array`  | Valley location indices                 |
 
 ### Methods
 
-#### `index_at_distance(distKm: number): number`
+#### `indexAtDistance(distKm: number): number`
 
 Index of the first location at or beyond `distKm`.
 
-#### `point_at_distance(distKm: number): { longitude, latitude, altitude } | undefined`
+#### `pointAtDistance(distKm: number): { longitude, latitude, altitude } | undefined`
 
 Location object at the given cumulative distance, or `undefined`.
 
-#### `find_closest_point(lon, lat, alt): { location, index, distance } | undefined`
+#### `findClosestPoint(lon, lat, alt): { location, index, distance } | undefined`
 
 Nearest location to the given coordinates. `distance` is in km.
 
-#### `find_closest_point_from(lon, lat, alt, startFrom): { location, index, distance } | undefined`
+#### `findClosestPointFrom(lon, lat, alt, startFrom): { location, index, distance } | undefined`
 
-Like `find_closest_point` but only searches from `startFrom` onwards — use
+Like `findClosestPoint` but only searches from `startFrom` onwards — use
 this in live-tracking loops to avoid snapping to an earlier position.
 
-#### `slice_between_distances(startKm, endKm): Float64Array | undefined`
+#### `sliceBetweenDistances(startKm, endKm): Float64Array | undefined`
 
 All points between two cumulative distances as a flat `[lon, lat, alt, …]`
 array, or `undefined` on invalid input.
 
-#### `get_section(startIndex, endIndex): Float64Array`
+#### `getSection(startIndex, endIndex): Float64Array`
 
 Points in the index range (inclusive) as `[lon, lat, alt, …]`. Throws on
 out-of-bounds input.
 
-#### `area(): { min_longitude, max_longitude, min_latitude, max_latitude }`
+#### `area(): { minLongitude, maxLongitude, minLatitude, maxLatitude }`
 
 Bounding box of the trace.
 
@@ -241,9 +241,9 @@ Raw (non-denoised) elevation totals (m).
 Detected climbs, each with:
 
 ```ts
-{ start_index: number, end_index: number, start_dist_km: number,
-  climb_dist_km: number, elevation_gain: number, summit_elev: number,
-  avg_gradient: number }
+{ startIndex: number, endIndex: number, startDistKm: number,
+  climbDistKm: number, elevationGain: number, summitElev: number,
+  avgGradient: number }
 ```
 
 #### `analyze(options): object | null`
@@ -262,7 +262,7 @@ pace re-anchored to it and the circadian clock re-seeded to real elapsed
 time. Returns `null` on malformed `options`.
 
 ```js
-const currentIndex = trace.find_closest_point(lon, lat, alt)?.index;
+const currentIndex = trace.findClosestPoint(lon, lat, alt)?.index;
 
 const recalibration = trace.recalibrate({
   basePaceSPerKm: 500,
@@ -292,10 +292,10 @@ waypoints (e.g. a `Trace` with no GPX-sourced waypoints).
 **`RecalibratedEtas`**
 
 ```ts
-{ calibration_factor: number, calibrated_base_pace_s_per_km: number,
-  predicted_so_far_s: number, actual_elapsed_s: number,
-  etas: { id: number, end_index: number, remaining_duration_s: number,
-          cumulative_remaining_s: number }[] }
+{ calibrationFactor: number, calibratedBasePaceSPerKm: number,
+  predictedSoFarS: number, actualElapsedS: number,
+  etas: { id: number, endIndex: number, remainingDurationS: number,
+          cumulativeRemainingS: number }[] }
 ```
 
 The factor is `actualElapsedS / predictedSoFar`, clamped to `[0.5, 3.0]`

@@ -390,9 +390,9 @@ buildTrace(Float64Array)          ← one O(n) copy JS→WASM, null if no points
        ▼
 Trace stays in WASM memory
        │
-       ├── trace.total_distance        → free (register)
-       ├── trace.find_closest_point()  → free (scalars in/out)
-       ├── trace.locations_flat        → one O(n) copy, cache it
+       ├── trace.totalDistance         → free (register)
+       ├── trace.findClosestPoint()    → free (scalars in/out)
+       ├── trace.locationsFlat         → one O(n) copy, cache it
        └── trace.free()               ← you must call this (no GC bridge)
 ```
 
@@ -425,48 +425,48 @@ const trace = buildTrace(pts);
 // → Trace, or null if pts carries no points
 
 // scalar getters — free
-trace.total_distance; // number (km)
-trace.total_elevation_gain; // number (m)
-trace.total_elevation_loss; // number (m)
-trace.location_count; // number
+trace.totalDistance; // number (km)
+trace.totalElevationGain; // number (m)
+trace.totalElevationLoss; // number (m)
+trace.locationCount; // number
 
 // array getters — copy once, then cache on the JS side
-const locs = trace.locations_flat; // Float64Array [lon,lat,alt,…]
-const dists = trace.cumulative_distances; // Float64Array (km)
-const gains = trace.cumulative_elevation_gains; // Float64Array (m)
-const losses = trace.cumulative_elevation_losses; // Float64Array (m)
+const locs = trace.locationsFlat; // Float64Array [lon,lat,alt,…]
+const dists = trace.cumulativeDistances; // Float64Array (km)
+const gains = trace.cumulativeElevationGains; // Float64Array (m)
+const losses = trace.cumulativeElevationLosses; // Float64Array (m)
 const slopes = trace.slopes; // Float64Array (%)
 const peaks = trace.peaks; // Uint32Array  (indices)
 const valleys = trace.valleys; // Uint32Array  (indices)
 
 // query methods — scalars in, one small object out
-trace.point_at_distance(42.0);
+trace.pointAtDistance(42.0);
 // → { longitude, latitude, altitude } | undefined
 
-trace.index_at_distance(42.0);
+trace.indexAtDistance(42.0);
 // → number
 
-trace.find_closest_point(lon, lat, alt);
+trace.findClosestPoint(lon, lat, alt);
 // → { location: { longitude, latitude, altitude }, index, distance } | undefined
 
-trace.find_closest_point_from(lon, lat, alt, lastIndex);
+trace.findClosestPointFrom(lon, lat, alt, lastIndex);
 // → same shape | undefined  (use on live-tracking loops)
 
-trace.slice_between_distances(10.0, 50.0);
+trace.sliceBetweenDistances(10.0, 50.0);
 // → Float64Array [lon,lat,alt,…] | undefined
 
-trace.get_section(startIndex, endIndex);
+trace.getSection(startIndex, endIndex);
 // → Float64Array [lon,lat,alt,…]  (throws on out-of-bounds / invalid range)
 
 trace.area();
-// → { min_longitude, max_longitude, min_latitude, max_latitude }
+// → { minLongitude, maxLongitude, minLatitude, maxLatitude }
 
 trace.elevation();
 // → { positive, negative }  (raw, non-denoised)
 
 trace.climbs();
-// → [{ start_index, end_index, start_dist_km, climb_dist_km,
-//      elevation_gain, summit_elev, avg_gradient }, …]
+// → [{ startIndex, endIndex, startDistKm, climbDistKm,
+//      elevationGain, summitElev, avgGradient }, …]
 
 // always release when done — Rust allocator has no GC bridge
 trace.free();
@@ -493,9 +493,9 @@ const options = { basePaceSPerKm: 500, kFatigue: 0.002, lifeBaseStopS: 3600 };
 // boundary again, and the expensive trace computation isn't repeated.
 const analysis = trace.analyze(options);
 // → {
-//     waypoints: [{ latitude, longitude, elevation, name, wpt_type, time, … }],
-//     legs:      [{ total_distance_km, total_elevation_gain_m, bearing, difficulty, … }],
-//     sections:  [{ …leg fields, pace_factor, max_completion_time, cutoff_ratio, … }],
+//     waypoints: [{ latitude, longitude, elevation, name, wptType, time, … }],
+//     legs:      [{ totalDistanceKm, totalElevationGainM, bearing, difficulty, … }],
+//     sections:  [{ …leg fields, paceFactor, maxCompletionTime, cutoffRatio, … }],
 //     stages:    [{ …same, grouped by Start/LifeBase/Arrival }],
 //     metadata:  { name, description },
 //   }
@@ -503,7 +503,7 @@ const analysis = trace.analyze(options);
 
 // Or, if you just want the JSON in one call and don't need the Trace handle:
 const full = analyzeGpx(bytes, options);
-// → { trace: { total_distance_km, total_elevation_gain_m, … }, ...analysis }
+// → { trace: { totalDistanceKm, totalElevationGainM, … }, ...analysis }
 //   or null on parse failure
 ```
 
@@ -514,7 +514,7 @@ static `.analyze()` prediction against actual progress — see
 [Live calibration](#live-calibration) above for the underlying model.
 
 ```js
-const currentIndex = trace.find_closest_point(lon, lat, alt)?.index;
+const currentIndex = trace.findClosestPoint(lon, lat, alt)?.index;
 
 const recalibration = trace.recalibrate({
   basePaceSPerKm: 500,
@@ -524,9 +524,9 @@ const recalibration = trace.recalibrate({
   actualElapsedS: 5400, // real seconds since race start
 });
 // → {
-//     sections: { calibration_factor, calibrated_base_pace_s_per_km,
-//                  predicted_so_far_s, actual_elapsed_s,
-//                  etas: [{ id, end_index, remaining_duration_s, cumulative_remaining_s }, …] } | null,
+//     sections: { calibrationFactor, calibratedBasePaceSPerKm,
+//                  predictedSoFarS, actualElapsedS,
+//                  etas: [{ id, endIndex, remainingDurationS, cumulativeRemainingS }, …] } | null,
 //     stages:   { …same shape, at Start/LifeBase/Arrival granularity } | null,
 //   }
 //   or null on malformed options
