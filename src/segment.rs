@@ -16,24 +16,32 @@ pub struct SegmentMetrics {
     pub total_weighted_dist_km: f64,
 }
 
+/// Configuration parameters for a segment computation (immutable across a call).
+pub struct SegmentParams {
+    pub base_pace_s_per_km: f64,
+    pub k_fatigue: f64,
+    pub clock_start: Option<i64>,
+    pub weather: WeatherConditions,
+}
+
+/// Mutable physiological state carried across consecutive segments.
+pub struct SegmentState {
+    /// Cumulative effort-weighted distance in metres.
+    pub d_eff_m: f64,
+    /// Cumulative moving-time clock in seconds.
+    pub elapsed_s: f64,
+}
+
 /// Accumulate metrics over trace points `[start_index, end_index)`.
 ///
-/// `d_eff_m` (cumulative effort-weighted distance in **metres**) and `elapsed_s`
-/// (cumulative moving-time clock in **seconds**) are mutated in place so the
-/// caller can carry fatigue and circadian state across consecutive segments.
-///
-/// `clock_start` is the race start epoch or `None` for a neutral (1.0) circadian factor.
-#[allow(clippy::too_many_arguments)]
+/// The `state` fields are mutated in place so the caller can carry fatigue
+/// and circadian state across consecutive segments.
 pub fn compute(
     trace: &Trace,
     start_index: usize,
     end_index: usize,
-    base_pace_s_per_km: f64,
-    k_fatigue: f64,
-    clock_start: Option<i64>,
-    weather: WeatherConditions,
-    d_eff_m: &mut f64,
-    elapsed_s: &mut f64,
+    params: &SegmentParams,
+    state: &mut SegmentState,
 ) -> SegmentMetrics {
     let mut min_elevation = trace.locations[start_index].altitude;
     let mut max_elevation = trace.locations[start_index].altitude;
@@ -41,7 +49,7 @@ pub fn compute(
     let mut total_time = 0.0_f64;
     let mut total_weighted_dist_km = 0.0_f64;
 
-    let weather_factor = pace_model::weather_factor(weather);
+    let weather_factor = pace_model::weather_factor(params.weather);
 
     for j in start_index..end_index {
         let ele = trace.locations[j].altitude;
@@ -50,23 +58,22 @@ pub fn compute(
         max_slope = max_slope.max(trace.slopes[j].abs());
 
         let slope_frac = trace.slopes[j] / 100.0;
-        // cumulative_distances is in km; differences give km segments directly.
         let seg_dist_km = trace.cumulative_distances[j + 1] - trace.cumulative_distances[j];
 
         let factors = pace_model::compute_factors(
             slope_frac,
-            *d_eff_m / 1000.0,
-            k_fatigue,
-            clock_start,
-            *elapsed_s,
+            state.d_eff_m / 1000.0,
+            params.k_fatigue,
+            params.clock_start,
+            state.elapsed_s,
             weather_factor,
         );
 
-        let seg_time = seg_dist_km * base_pace_s_per_km * factors.combined;
+        let seg_time = seg_dist_km * params.base_pace_s_per_km * factors.combined;
         total_time += seg_time;
-        *elapsed_s += seg_time;
+        state.elapsed_s += seg_time;
         total_weighted_dist_km += seg_dist_km * factors.terrain;
-        *d_eff_m += seg_dist_km * 1000.0 * factors.terrain;
+        state.d_eff_m += seg_dist_km * 1000.0 * factors.terrain;
     }
 
     SegmentMetrics {
@@ -95,26 +102,28 @@ mod tests {
         Trace::new(&locs).unwrap()
     }
 
+    fn default_params(weather: WeatherConditions) -> SegmentParams {
+        SegmentParams {
+            base_pace_s_per_km: 500.0,
+            k_fatigue: crate::pace_model::K_FATIGUE,
+            clock_start: None,
+            weather,
+        }
+    }
+
     #[test]
     fn flat_range_neutral_pace_factor() {
         let trace = flat_trace(5);
-        let mut d_eff = 0.0;
-        let mut elapsed = 0.0;
-        let m = compute(
-            &trace,
-            0,
-            trace.locations.len() - 1,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_eff,
-            &mut elapsed,
-        );
+        let mut state = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
+        let params = default_params(WEATHER_NEUTRAL);
+        let m = compute(&trace, 0, trace.locations.len() - 1, &params, &mut state);
         assert!((m.min_elevation - 100.0).abs() < 0.001);
         assert!((m.max_elevation - 100.0).abs() < 0.001);
         assert!(m.total_time > 0.0);
-        assert!((m.total_time - elapsed).abs() < 1e-9);
+        assert!((m.total_time - state.elapsed_s).abs() < 1e-9);
     }
 
     #[test]
@@ -130,33 +139,16 @@ mod tests {
         let last = trace.locations.len() - 1;
         let mid = last / 2;
 
-        let mut d_eff = 0.0;
-        let mut elapsed = 0.0;
-        compute(
-            &trace,
-            0,
-            mid,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_eff,
-            &mut elapsed,
-        );
-        let d_after_first = d_eff;
-        compute(
-            &trace,
-            mid,
-            last,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_eff,
-            &mut elapsed,
-        );
-        assert!(d_eff > d_after_first);
-        assert!(elapsed > 0.0);
+        let mut state = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
+        let params = default_params(WEATHER_NEUTRAL);
+        compute(&trace, 0, mid, &params, &mut state);
+        let d_after_first = state.d_eff_m;
+        compute(&trace, mid, last, &params, &mut state);
+        assert!(state.d_eff_m > d_after_first);
+        assert!(state.elapsed_s > 0.0);
     }
 
     #[test]
@@ -168,31 +160,27 @@ mod tests {
             wind_kmh: 35.0,
             precip_prob_pct: 80.0,
         };
-        let mut d_a = 0.0;
-        let mut e_a = 0.0;
+        let mut state_a = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
         let neutral = compute(
             &trace,
             0,
             trace.locations.len() - 1,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_a,
-            &mut e_a,
+            &default_params(WEATHER_NEUTRAL),
+            &mut state_a,
         );
-        let mut d_b = 0.0;
-        let mut e_b = 0.0;
+        let mut state_b = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
         let adverse = compute(
             &trace,
             0,
             trace.locations.len() - 1,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            hot,
-            &mut d_b,
-            &mut e_b,
+            &default_params(hot),
+            &mut state_b,
         );
         assert!(adverse.total_time > neutral.total_time);
         let expected = neutral.total_time * weather_factor(hot);
@@ -202,7 +190,6 @@ mod tests {
 
     #[test]
     fn descending_slope_reduces_time_below_flat() {
-        // Gentle descent (5 m drop per point) — Minetti cost is below flat.
         let locs: Vec<Location> = (0..5)
             .map(|i| Location {
                 longitude: i as f64 * 0.001,
@@ -214,32 +201,27 @@ mod tests {
         let flat = flat_trace(5);
         let last = flat.locations.len() - 1;
 
-        let mut d_d = 0.0;
-        let mut e_d = 0.0;
+        let mut state_d = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
         let desc_m = compute(
             &descending,
             0,
             last,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_d,
-            &mut e_d,
+            &default_params(WEATHER_NEUTRAL),
+            &mut state_d,
         );
-
-        let mut d_f = 0.0;
-        let mut e_f = 0.0;
+        let mut state_f = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
         let flat_m = compute(
             &flat,
             0,
             last,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d_f,
-            &mut e_f,
+            &default_params(WEATHER_NEUTRAL),
+            &mut state_f,
         );
 
         assert!(desc_m.total_time < flat_m.total_time);
@@ -247,7 +229,6 @@ mod tests {
 
     #[test]
     fn max_slope_tracked_correctly() {
-        // 50 m gain per 0.111 km segment → very steep.
         let locs: Vec<Location> = (0..4)
             .map(|i| Location {
                 longitude: i as f64 * 0.001,
@@ -256,21 +237,13 @@ mod tests {
             })
             .collect();
         let trace = Trace::new(&locs).unwrap();
-        let mut d = 0.0;
-        let mut e = 0.0;
-        let m = compute(
-            &trace,
-            0,
-            3,
-            500.0,
-            pace_model::K_FATIGUE,
-            None,
-            WEATHER_NEUTRAL,
-            &mut d,
-            &mut e,
-        );
+        let mut state = SegmentState {
+            d_eff_m: 0.0,
+            elapsed_s: 0.0,
+        };
+        let m = compute(&trace, 0, 3, &default_params(WEATHER_NEUTRAL), &mut state);
         assert!(m.max_slope > 10.0);
         assert_eq!(m.min_elevation, 0.0);
-        assert_eq!(m.max_elevation, 100.0); // index 2 is the last iterated (end exclusive)
+        assert_eq!(m.max_elevation, 100.0);
     }
 }

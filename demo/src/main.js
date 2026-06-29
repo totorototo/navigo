@@ -1,4 +1,4 @@
-import init, { parseGpx } from "../pkg/navigo.js";
+import init, { parseGpx, analyzeGpx } from "../pkg/navigo.js";
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -8,75 +8,91 @@ const response = await fetch("/grp-160-2026.gpx");
 const buffer = await response.arrayBuffer();
 const bytes = new Uint8Array(buffer);
 
-const trace = parseGpx(bytes);
-const full = trace
-  ? trace.analyze({
-      basePaceSPerKm: 500,
-      kFatigue: 0.002,
-      lifeBaseStopS: 3600,
-    })
-  : null;
+let trace;
+let full;
 
-if (!trace || !full) {
-  document.body.innerHTML =
-    '<p style="padding:2rem;font-family:monospace">Failed to parse GPX.</p>';
-  throw new Error("GPX parse failed");
-}
+try {
+  // parseGpx — lean path: only <trkpt> track-points are parsed.
+  // Use it when you only need raw GPS arrays (elevation profile, distances, peaks…).
+  trace = parseGpx(bytes);
 
-// Cache all bulk arrays once — each getter copies WASM→JS heap.
-const locsFlat = trace.locationsFlat;
-const dists = trace.cumulativeDistances;
-const peaks = trace.peaks;
-const valleys = trace.valleys;
-const climbs = trace.climbs();
-const area = trace.area();
+  if (!trace) {
+    document.body.innerHTML =
+      '<p style="padding:2rem;font-family:monospace">Failed to parse GPX.</p>';
+    throw new Error("GPX parse failed");
+  }
 
-// ── Header ────────────────────────────────────────────────────────────────────
+  // Cache all bulk arrays once — each method copies WASM→JS heap (O(n)).
+  const locsFlat = trace.getLocationsFlat();
+  const dists = trace.getCumulativeDistances();
+  const peaks = trace.getPeaks();
+  const valleys = trace.getValleys();
+  const climbs = trace.climbs();
+  const area = trace.area();
 
-setText("race-title", full.metadata.name || "");
+  // analyzeGpx — full path: parses track-points + waypoints + metadata, then
+  // runs the legs/sections/stages pipeline. Call this only when you need the
+  // race analysis; it is independent of the Trace handle above.
+  full = analyzeGpx(bytes, {
+    basePaceSPerKm: 500,
+    kFatigue: 0.002,
+    lifeBaseStopS: 3600,
+  });
 
-// ── Stats cards ───────────────────────────────────────────────────────────────
+  if (!full) {
+    document.body.innerHTML =
+      '<p style="padding:2rem;font-family:monospace">Failed to analyze GPX.</p>';
+    throw new Error("GPX analysis failed");
+  }
 
-setText("stat-distance", trace.totalDistance.toFixed(1) + " km");
-setText("stat-gain", "+" + Math.round(trace.totalElevationGain) + " m");
-setText("stat-loss", "−" + Math.round(trace.totalElevationLoss) + " m");
-setText("stat-locations", trace.locationCount.toString());
-setText("stat-climbs", climbs.length.toString());
+  // ── Header ────────────────────────────────────────────────────────────────────
 
-if (area) {
-  setText(
-    "stat-bbox",
-    `${area.minLatitude.toFixed(3)}°N – ${area.maxLatitude.toFixed(3)}°N, ` +
-      `${area.minLongitude.toFixed(3)}°E – ${area.maxLongitude.toFixed(3)}°E`,
+  setText("race-title", full.metadata.name || "");
+
+  // ── Stats cards ───────────────────────────────────────────────────────────────
+
+  setText("stat-distance", trace.totalDistance.toFixed(1) + " km");
+  setText("stat-gain", "+" + Math.round(trace.totalElevationGain) + " m");
+  setText("stat-loss", "−" + Math.round(trace.totalElevationLoss) + " m");
+  setText("stat-locations", trace.locationCount.toString());
+  setText("stat-climbs", climbs.length.toString());
+
+  if (area) {
+    setText(
+      "stat-bbox",
+      `${area.minLatitude.toFixed(3)}°N – ${area.maxLatitude.toFixed(3)}°N, ` +
+        `${area.minLongitude.toFixed(3)}°E – ${area.maxLongitude.toFixed(3)}°E`,
+    );
+  }
+
+  // ── Elevation profile ─────────────────────────────────────────────────────────
+
+  const canvas = document.getElementById("profile");
+  drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs);
+  window.addEventListener("resize", () =>
+    drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs),
   );
+
+  // ── Climbs list ───────────────────────────────────────────────────────────────
+
+  renderClimbs(climbs);
+
+  // ── Checkpoints ───────────────────────────────────────────────────────────────
+
+  renderWaypoints(full.waypoints);
+
+  // ── Sections ─────────────────────────────────────────────────────────────────
+
+  renderSections(full.sections, full.waypoints);
+
+  // ── Stages ───────────────────────────────────────────────────────────────────
+
+  renderStages(full.stages, full.waypoints);
+} finally {
+  // ── Free WASM memory — all array data already copied to JS ───────────────────
+  // `full` is a plain JS object (no WASM handle), nothing to free there.
+  trace?.free();
 }
-
-// ── Elevation profile ─────────────────────────────────────────────────────────
-
-const canvas = document.getElementById("profile");
-drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs);
-window.addEventListener("resize", () =>
-  drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs),
-);
-
-// ── Climbs list ───────────────────────────────────────────────────────────────
-
-renderClimbs(climbs);
-
-// ── Checkpoints ───────────────────────────────────────────────────────────────
-
-renderWaypoints(full.waypoints);
-
-// ── Sections ─────────────────────────────────────────────────────────────────
-
-renderSections(full.sections, full.waypoints);
-
-// ── Stages ───────────────────────────────────────────────────────────────────
-
-renderStages(full.stages, full.waypoints);
-
-// ── Free WASM memory — all data already copied to JS ─────────────────────────
-trace.free();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -274,8 +290,14 @@ function drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs) {
   for (let i = 2; i < locsFlat.length; i += 3) alts.push(locsFlat[i]);
 
   const maxDist = dists[dists.length - 1];
-  const minAlt = Math.min(...alts) - 80;
-  const maxAlt = Math.max(...alts) + 80;
+  let minAlt = Infinity;
+  let maxAlt = -Infinity;
+  for (const alt of alts) {
+    if (alt < minAlt) minAlt = alt;
+    if (alt > maxAlt) maxAlt = alt;
+  }
+  minAlt -= 80;
+  maxAlt += 80;
 
   const xP = (d) => PAD.left + (d / maxDist) * CW;
   const yP = (a) => PAD.top + (1 - (a - minAlt) / (maxAlt - minAlt)) * CH;

@@ -74,7 +74,7 @@ pub const WEATHER_WIND_PER_KMH: f64 = 0.004;
 pub const WEATHER_WIND_MAX: f64 = 0.20;
 pub const WEATHER_PRECIP_MAX: f64 = 0.08;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "wasm", derive(serde::Serialize, serde::Deserialize))]
 pub struct WeatherConditions {
     pub temperature_c: f64,
@@ -129,6 +129,7 @@ pub fn weather_factor(c: WeatherConditions) -> f64 {
 }
 
 /// Name-keyed weather forecast table. Unknown names resolve to `WEATHER_NEUTRAL`.
+#[derive(Debug, Clone)]
 pub struct WeatherLookup {
     names: Vec<String>,
     values: Vec<WeatherConditions>,
@@ -157,6 +158,65 @@ impl WeatherLookup {
 
     pub fn factor_for(&self, name: &str) -> f64 {
         weather_factor(self.find(name))
+    }
+}
+
+// ── Analysis options (builder) ────────────────────────────────────────────────
+
+/// Grouped parameters for the pace model used by `section`, `stage` and
+/// `calibration` computations.  Use the builder methods or `Default` for
+/// sensible race-analysis defaults.
+#[derive(Debug, Clone)]
+pub struct AnalysisOptions {
+    /// Flat-terrain pace in seconds per km.
+    pub base_pace_s_per_km: f64,
+    /// Exponential fatigue coefficient.
+    pub k_fatigue: f64,
+    /// Default planned stop at LifeBase checkpoints (seconds).
+    pub life_base_stop_s: u32,
+    /// Per-checkpoint weather forecast.
+    pub weather: WeatherLookup,
+}
+
+impl Default for AnalysisOptions {
+    fn default() -> Self {
+        Self {
+            base_pace_s_per_km: DEFAULT_BASE_PACE_S_PER_KM,
+            k_fatigue: K_FATIGUE,
+            life_base_stop_s: DEFAULT_LIFE_BASE_STOP_S,
+            weather: WeatherLookup::empty(),
+        }
+    }
+}
+
+impl AnalysisOptions {
+    /// Start building options from the defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set flat-terrain pace (seconds per km).
+    pub fn base_pace(mut self, s_per_km: f64) -> Self {
+        self.base_pace_s_per_km = s_per_km;
+        self
+    }
+
+    /// Set the exponential fatigue coefficient.
+    pub fn fatigue(mut self, k: f64) -> Self {
+        self.k_fatigue = k;
+        self
+    }
+
+    /// Set the default LifeBase stop duration (seconds).
+    pub fn life_base_stop(mut self, seconds: u32) -> Self {
+        self.life_base_stop_s = seconds;
+        self
+    }
+
+    /// Attach a weather forecast lookup table.
+    pub fn weather(mut self, lookup: WeatherLookup) -> Self {
+        self.weather = lookup;
+        self
     }
 }
 

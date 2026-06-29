@@ -153,7 +153,7 @@ fn filter_by_prominence(
     find_peaks: bool,
 ) -> Vec<usize> {
     if candidates.is_empty() || min_prominence <= 0.0 {
-        return candidates.to_vec();
+        return candidates.into();
     }
     candidates
         .iter()

@@ -64,7 +64,7 @@ fn parse_tag_content<'a>(
 /// or incomplete track-points are silently skipped, matching the behaviour of
 /// the reference Zig implementation.
 pub fn parse_trace_points(bytes: &[u8]) -> Vec<Location> {
-    let mut locations = Vec::new();
+    let mut locations = Vec::with_capacity(bytes.len() / 100);
     let mut pos = 0;
 
     while let Some(trkpt_start) = find_from(bytes, pos, b"<trkpt") {
@@ -130,6 +130,285 @@ pub fn parse_trace_points(bytes: &[u8]) -> Vec<Location> {
 pub struct GpxMetadata {
     pub name: Option<String>,
     pub description: Option<String>,
+}
+
+/// Combined GPX payload used by the full WASM analysis path.
+pub(crate) struct ParsedGpx {
+    pub locations: Vec<Location>,
+    pub waypoints: Vec<Waypoint>,
+    pub metadata: GpxMetadata,
+}
+
+/// Parse track points, waypoints and metadata in a single pass.
+pub(crate) fn parse_all(bytes: &[u8]) -> ParsedGpx {
+    let mut locations = Vec::with_capacity(bytes.len() / 100);
+    let mut waypoints = Vec::new();
+    let mut metadata = GpxMetadata {
+        name: None,
+        description: None,
+    };
+    // Pre-scan: if a <metadata> block exists anywhere, root-level <name>/<desc>
+    // must be ignored — matching the semantics of `parse_metadata`.
+    let has_metadata_block = find_from(bytes, 0, b"<metadata>").is_some();
+
+    let mut pos = 0usize;
+
+    while let Some(tag_start) = find_byte_from(bytes, pos, b'<') {
+        if bytes
+            .get(tag_start..)
+            .is_some_and(|s| s.starts_with(b"<trkpt"))
+        {
+            let trkpt_end = match find_from(bytes, tag_start, b"</trkpt>") {
+                Some(index) => index,
+                None => break,
+            };
+            pos = trkpt_end + b"</trkpt>".len();
+
+            let tag_end = match find_from(bytes, tag_start, b">") {
+                Some(index) => index,
+                None => continue,
+            };
+
+            let tag_section = match bytes.get(tag_start..tag_end) {
+                Some(s) => s,
+                None => continue,
+            };
+            let content_start = tag_end + 1;
+            let content = match bytes.get(content_start..trkpt_end) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let lat = match parse_attr(bytes, tag_start, tag_section, b"lat=") {
+                Some(value) => value,
+                None => continue,
+            };
+            let lon = match parse_attr(bytes, tag_start, tag_section, b"lon=") {
+                Some(value) => value,
+                None => continue,
+            };
+            let ele_bytes = match parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                trkpt_end,
+                b"<ele>",
+                b"</ele>",
+            ) {
+                Some(slice) => slice,
+                None => continue,
+            };
+            let elevation = match std::str::from_utf8(ele_bytes)
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+            {
+                Some(value) => value,
+                None => continue,
+            };
+
+            locations.push(Location {
+                longitude: lon,
+                latitude: lat,
+                altitude: elevation,
+            });
+            continue;
+        }
+
+        if bytes
+            .get(tag_start..)
+            .is_some_and(|s| s.starts_with(b"<wpt"))
+        {
+            let wpt_end = match find_from(bytes, tag_start, b"</wpt>") {
+                Some(index) => index,
+                None => break,
+            };
+            pos = wpt_end + b"</wpt>".len();
+
+            let tag_end = match find_from(bytes, tag_start, b">") {
+                Some(index) if index < wpt_end => index,
+                _ => continue,
+            };
+            let tag_section = match bytes.get(tag_start..tag_end) {
+                Some(s) => s,
+                None => continue,
+            };
+            let content_start = tag_end + 1;
+            let content = match bytes.get(content_start..wpt_end) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            let lat = match parse_attr(bytes, tag_start, tag_section, b"lat=") {
+                Some(value) => value,
+                None => continue,
+            };
+            let lon = match parse_attr(bytes, tag_start, tag_section, b"lon=") {
+                Some(value) => value,
+                None => continue,
+            };
+
+            let elevation =
+                parse_tag_content(bytes, content, content_start, wpt_end, b"<ele>", b"</ele>")
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .and_then(|s| s.parse::<f64>().ok());
+
+            let name = parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                wpt_end,
+                b"<name>",
+                b"</name>",
+            )
+            .and_then(|s| std::str::from_utf8(s).ok())
+            .map(String::from)
+            .unwrap_or_default();
+
+            let description = parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                wpt_end,
+                b"<desc>",
+                b"</desc>",
+            )
+            .and_then(|s| std::str::from_utf8(s).ok())
+            .map(String::from);
+
+            let comment =
+                parse_tag_content(bytes, content, content_start, wpt_end, b"<cmt>", b"</cmt>")
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .map(String::from);
+
+            let symbol =
+                parse_tag_content(bytes, content, content_start, wpt_end, b"<sym>", b"</sym>")
+                    .and_then(|s| std::str::from_utf8(s).ok())
+                    .map(String::from);
+
+            let wpt_type = parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                wpt_end,
+                b"<type>",
+                b"</type>",
+            )
+            .and_then(|s| std::str::from_utf8(s).ok())
+            .map(String::from);
+
+            let time = parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                wpt_end,
+                b"<time>",
+                b"</time>",
+            )
+            .and_then(|s| std::str::from_utf8(s).ok())
+            .and_then(|s| crate::time::parse_iso8601_to_epoch(s).ok());
+
+            let stop_duration = parse_tag_content(
+                bytes,
+                content,
+                content_start,
+                wpt_end,
+                b"<stopDuration>",
+                b"</stopDuration>",
+            )
+            .and_then(|s| std::str::from_utf8(s).ok())
+            .and_then(|s| s.parse::<u32>().ok());
+
+            waypoints.push(Waypoint {
+                latitude: lat,
+                longitude: lon,
+                elevation,
+                name,
+                description,
+                comment,
+                symbol,
+                wpt_type,
+                time,
+                stop_duration,
+            });
+            continue;
+        }
+
+        if bytes
+            .get(tag_start..)
+            .is_some_and(|s| s.starts_with(b"<metadata>"))
+        {
+            let metadata_end = match find_from(bytes, tag_start, b"</metadata>") {
+                Some(index) => index,
+                None => break,
+            };
+            let metadata_content = &bytes[tag_start..metadata_end];
+
+            if let Some(name_pos) = metadata_content.windows(6).position(|w| w == b"<name>") {
+                let value_start = tag_start + name_pos + 6;
+                if let Some(value_end) = find_from(bytes, value_start, b"</name>") {
+                    if value_end <= metadata_end {
+                        metadata.name = std::str::from_utf8(&bytes[value_start..value_end])
+                            .ok()
+                            .map(String::from);
+                    }
+                }
+            }
+
+            if let Some(desc_pos) = metadata_content.windows(6).position(|w| w == b"<desc>") {
+                let value_start = tag_start + desc_pos + 6;
+                if let Some(value_end) = find_from(bytes, value_start, b"</desc>") {
+                    if value_end <= metadata_end {
+                        metadata.description = std::str::from_utf8(&bytes[value_start..value_end])
+                            .ok()
+                            .map(String::from);
+                    }
+                }
+            }
+
+            pos = metadata_end + b"</metadata>".len();
+            continue;
+        }
+
+        if !has_metadata_block
+            && metadata.name.is_none()
+            && bytes
+                .get(tag_start..)
+                .is_some_and(|s| s.starts_with(b"<name>"))
+        {
+            let value_start = tag_start + 6;
+            if let Some(value_end) = find_from(bytes, value_start, b"</name>") {
+                metadata.name = std::str::from_utf8(&bytes[value_start..value_end])
+                    .ok()
+                    .map(String::from);
+            }
+            pos = value_start;
+            continue;
+        }
+
+        if !has_metadata_block
+            && metadata.description.is_none()
+            && bytes
+                .get(tag_start..)
+                .is_some_and(|s| s.starts_with(b"<desc>"))
+        {
+            let value_start = tag_start + 6;
+            if let Some(value_end) = find_from(bytes, value_start, b"</desc>") {
+                metadata.description = std::str::from_utf8(&bytes[value_start..value_end])
+                    .ok()
+                    .map(String::from);
+            }
+            pos = value_start;
+            continue;
+        }
+
+        pos = tag_start + 1;
+    }
+
+    ParsedGpx {
+        locations,
+        waypoints,
+        metadata,
+    }
 }
 
 /// Parse `<metadata>` name and description from raw GPX bytes.
@@ -474,5 +753,27 @@ mod tests {
             waypoints[1].description.as_deref(),
             Some("Only second has this")
         );
+    }
+
+    #[test]
+    fn parse_all_does_not_fall_back_to_root_name_when_metadata_block_exists() {
+        let gpx = br#"<?xml version="1.0"?>
+<gpx>
+  <name>Root Name</name>
+  <metadata>
+    <desc>Track description</desc>
+  </metadata>
+  <trk><trkseg>
+    <trkpt lat="45.0" lon="7.0"><ele>100</ele></trkpt>
+  </trkseg></trk>
+</gpx>"#;
+
+        let parsed = parse_all(gpx);
+        assert!(parsed.metadata.name.is_none());
+        assert_eq!(
+            parsed.metadata.description.as_deref(),
+            Some("Track description")
+        );
+        assert_eq!(parsed.locations.len(), 1);
     }
 }

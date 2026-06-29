@@ -77,10 +77,11 @@ impl Trace {
         self.inner.locations.len() as u32
     }
 
-    // ── Array getters — O(n) copy from WASM → JS heap; call once and cache ────
+    // ── Array methods — O(n) copy from WASM → JS heap; call once and cache ─────
+    // These are methods (not getters) to make the O(n) cost explicit to callers.
 
     /// Flat `Float64Array` `[lon₀, lat₀, alt₀,  lon₁, lat₁, alt₁, …]`.
-    #[wasm_bindgen(getter, js_name = "locationsFlat")]
+    #[wasm_bindgen(js_name = "getLocationsFlat")]
     pub fn locations_flat(&self) -> Vec<f64> {
         self.inner
             .locations
@@ -89,34 +90,34 @@ impl Trace {
             .collect()
     }
 
-    #[wasm_bindgen(getter, js_name = "cumulativeDistances")]
+    #[wasm_bindgen(js_name = "getCumulativeDistances")]
     pub fn cumulative_distances(&self) -> Vec<f64> {
         self.inner.cumulative_distances.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = "cumulativeElevationGains")]
+    #[wasm_bindgen(js_name = "getCumulativeElevationGains")]
     pub fn cumulative_elevation_gains(&self) -> Vec<f64> {
         self.inner.cumulative_elevation_gains.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = "cumulativeElevationLosses")]
+    #[wasm_bindgen(js_name = "getCumulativeElevationLosses")]
     pub fn cumulative_elevation_losses(&self) -> Vec<f64> {
         self.inner.cumulative_elevation_losses.clone()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(js_name = "getSlopes")]
     pub fn slopes(&self) -> Vec<f64> {
         self.inner.slopes.clone()
     }
 
     /// Peak indices as `Uint32Array`.
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(js_name = "getPeaks")]
     pub fn peaks(&self) -> Vec<u32> {
         self.inner.peaks.iter().map(|&i| i as u32).collect()
     }
 
     /// Valley indices as `Uint32Array`.
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(js_name = "getValleys")]
     pub fn valleys(&self) -> Vec<u32> {
         self.inner.valleys.iter().map(|&i| i as u32).collect()
     }
@@ -191,24 +192,24 @@ impl Trace {
     pub fn get_section(&self, start_index: u32, end_index: u32) -> Result<Vec<f64>, JsError> {
         self.inner
             .get_section(start_index as usize, end_index as usize)
-            .map(|locs| locs_to_flat(&locs))
+            .map(locs_to_flat)
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Returns `{ min_longitude, max_longitude, min_latitude, max_latitude }`.
     pub fn area(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(&self.inner.area()).unwrap_or(JsValue::NULL)
+        serde_wasm_bindgen::to_value(self.inner.area()).unwrap_or(JsValue::NULL)
     }
 
     /// Returns `{ positive, negative }` (raw, non-denoised elevation totals).
     pub fn elevation(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(&self.inner.elevation()).unwrap_or(JsValue::NULL)
+        serde_wasm_bindgen::to_value(self.inner.elevation()).unwrap_or(JsValue::NULL)
     }
 
     /// Returns an array of climb objects:
     /// `[{ start_index, end_index, start_dist_km, climb_dist_km, elevation_gain, summit_elev, avg_gradient }, …]`
     pub fn climbs(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(&self.inner.climbs).unwrap_or(JsValue::UNDEFINED)
+        serde_wasm_bindgen::to_value(self.inner.climbs()).unwrap_or(JsValue::UNDEFINED)
     }
 
     /// Compute the race analysis (waypoints, legs, sections, stages) using
@@ -220,9 +221,13 @@ impl Trace {
     /// Returns a JS object with `{ waypoints, legs, sections, stages, metadata }`
     /// or `null` when `options` is malformed.
     pub fn analyze(&self, options: JsValue) -> Option<JsValue> {
-        let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options).ok()?;
+        let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| super::warn(&format!("navigo: analyze() options error: {e}")))
+            .ok()?;
         let analysis = super::compute_route_analysis(self, &options);
-        serde_wasm_bindgen::to_value(&analysis).ok()
+        serde_wasm_bindgen::to_value(&analysis)
+            .map_err(|e| super::warn(&format!("navigo: analyze() serialization error: {e}")))
+            .ok()
     }
 
     /// Live, mid-race ETA recalibration — corrects the static `.analyze()`
@@ -239,9 +244,13 @@ impl Trace {
     /// etas: [{ id, end_index, remaining_duration_s, cumulative_remaining_s }, …] }`.
     /// Returns `null` when `options` is malformed.
     pub fn recalibrate(&self, options: JsValue) -> Option<JsValue> {
-        let options: WasmRecalibrateOptions = serde_wasm_bindgen::from_value(options).ok()?;
+        let options: WasmRecalibrateOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| super::warn(&format!("navigo: recalibrate() options error: {e}")))
+            .ok()?;
         let recalibration = super::compute_recalibration(self, &options);
-        serde_wasm_bindgen::to_value(&recalibration).ok()
+        serde_wasm_bindgen::to_value(&recalibration)
+            .map_err(|e| super::warn(&format!("navigo: recalibrate() serialization error: {e}")))
+            .ok()
     }
 }
 

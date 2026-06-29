@@ -7,6 +7,7 @@ mod extrema;
 pub mod gpx;
 #[cfg(test)]
 mod helper;
+mod interval;
 pub mod leg;
 mod location;
 pub mod minetti;
@@ -29,7 +30,7 @@ pub use error::TraceError;
 pub use gpx::{parse_metadata, parse_trace_points, parse_waypoints, GpxMetadata};
 pub use leg::LegStats;
 pub use location::Location;
-pub use pace_model::{WeatherConditions, WeatherLookup};
+pub use pace_model::{AnalysisOptions, WeatherConditions, WeatherLookup};
 pub use section::SectionStats;
 pub use stage::StageStats;
 pub use time::parse_iso8601_to_epoch;

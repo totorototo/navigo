@@ -8,31 +8,90 @@ mod options;
 mod trace;
 
 use dto::{
-    WasmGpxFull, WasmRecalibration, WasmRouteAnalysis, WasmSectionStats, WasmStageStats,
-    WasmTraceSummary,
+    WasmGpxFull, WasmGpxMetadata, WasmRecalibration, WasmRouteAnalysis, WasmSectionStats,
+    WasmStageStats, WasmTraceSummary, WasmWaypoint,
 };
 use options::{WasmAnalyzeOptions, WasmRecalibrateOptions};
 pub use trace::Trace;
 
+// ── Console warning helper (no web-sys dep) ──────────────────────────────────
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = warn)]
+    fn console_warn(msg: &str);
+}
+
+/// Log a warning to the browser console (only in debug builds to avoid noise).
+#[inline]
+fn warn(msg: &str) {
+    console_warn(msg);
+}
+
 // ── Public entry points ───────────────────────────────────────────────────────
 
 /// Parse a GPX file from raw bytes (e.g. a `Uint8Array` read on the JS side)
-/// into a `Trace` — track-points, waypoints and metadata are all parsed
-/// once here and stored in WASM memory.
+/// into a `Trace` — **only `<trkpt>` track-points are parsed**; waypoints and
+/// metadata are intentionally ignored so this path stays as lean as possible.
+///
+/// Call [`parseWaypoints`] and/or [`parseMetadata`] separately when you need
+/// that data.  If you need the full race analysis in one shot, use
+/// [`analyzeGpx`] instead.
 ///
 /// Returns `null` when the GPX contains no valid track-points.
 #[wasm_bindgen(js_name = "parseGpx")]
 pub fn parse_gpx(bytes: &[u8]) -> Option<Trace> {
-    parse_wasm_trace(bytes)
+    let locations = crate::gpx::parse_trace_points(bytes);
+    let inner = core_build_trace(&locations).ok()?;
+    Some(Trace::new(
+        inner,
+        Vec::new(),
+        crate::gpx::GpxMetadata {
+            name: None,
+            description: None,
+        },
+    ))
+}
+
+/// Parse only the `<wpt>` waypoints from raw GPX bytes.
+///
+/// Returns a JS array of `{ latitude, longitude, elevation, name, wptType,
+/// time, stopDuration }` objects, or an empty array when none are found.
+/// Call this only when you actually need waypoints — parsing is O(N) over
+/// the full byte slice.
+#[wasm_bindgen(js_name = "parseWaypoints")]
+pub fn parse_waypoints_js(bytes: &[u8]) -> JsValue {
+    let waypoints: Vec<WasmWaypoint> = crate::gpx::parse_waypoints(bytes)
+        .iter()
+        .map(Into::into)
+        .collect();
+    serde_wasm_bindgen::to_value(&waypoints).unwrap_or(JsValue::UNDEFINED)
+}
+
+/// Parse only the `<metadata>` block (or root-level `<name>`/`<desc>`) from
+/// raw GPX bytes.
+///
+/// Returns a JS object `{ name, description }` (fields are `null` when absent).
+/// Call this only when you actually need the metadata.
+#[wasm_bindgen(js_name = "parseMetadata")]
+pub fn parse_metadata_js(bytes: &[u8]) -> JsValue {
+    let metadata = WasmGpxMetadata::from(&crate::gpx::parse_metadata(bytes));
+    serde_wasm_bindgen::to_value(&metadata).unwrap_or(JsValue::UNDEFINED)
 }
 
 /// Parse a GPX file and compute the full analysis in one call: trace metrics,
 /// waypoints, legs (Naismith), sections and stages (Minetti pace model).
 ///
-/// Convenience wrapper around `parseGpx` + `trace.analyze()` for callers who
-/// just want the JSON result and don't need the `Trace` handle (so there's
-/// no `.free()` to manage). If you already have a `Trace`, call
-/// `.analyze()` on it directly instead of parsing the bytes twice.
+/// Use this when you need **both** the race analysis (legs/sections/stages) and
+/// bulk trace arrays in a single JS object, without holding a `Trace` handle.
+/// It parses track-points, waypoints and metadata in a single `bytes` pass
+/// each, then runs the full pipeline.
+///
+/// If you only need raw GPS data (elevation profile, distances, peaks…) use
+/// [`parseGpx`] instead — it skips waypoints and metadata entirely.
+/// If you already hold a `Trace` from `parseGpx`, you can pass waypoints
+/// obtained from [`parseWaypoints`] to the server-side analysis instead of
+/// calling this function and re-parsing the bytes.
 ///
 /// `options` — a JS object: `{ basePaceSPerKm, kFatigue, lifeBaseStopS, weather? }`.
 /// `weather` is an optional array of
@@ -43,13 +102,17 @@ pub fn parse_gpx(bytes: &[u8]) -> Option<Trace> {
 /// or `null` when the GPX contains no valid track-points or `options` is malformed.
 #[wasm_bindgen(js_name = "analyzeGpx")]
 pub fn analyze_gpx(bytes: &[u8], options: JsValue) -> Option<JsValue> {
-    let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options).ok()?;
+    let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options)
+        .map_err(|e| warn(&format!("navigo: analyzeGpx options parse error: {e}")))
+        .ok()?;
     let trace = parse_wasm_trace(bytes)?;
 
     let analysis = compute_route_analysis(&trace, &options);
     let result = WasmGpxFull::new(WasmTraceSummary::from(trace.inner()), analysis);
 
-    serde_wasm_bindgen::to_value(&result).ok()
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| warn(&format!("navigo: analyzeGpx serialization error: {e}")))
+        .ok()
 }
 
 /// Build a trace from a flat `Float64Array` of interleaved coordinates:
@@ -84,38 +147,27 @@ pub fn build_trace(flat: &[f64]) -> Option<Trace> {
     })
 }
 
-/// Parse GPX `bytes` into a `Trace`, including its waypoints and metadata.
+/// Parse GPX `bytes` into a `Trace` that carries **all three** — track-points,
+/// waypoints and metadata — in a single (triple-scan) pass.
+///
+/// Used only internally by `analyzeGpx`, where waypoints are required for the
+/// legs/sections/stages pipeline. Public consumers who need waypoints
+/// separately should call `parse_waypoints_js` / `parse_metadata_js`.
 fn parse_wasm_trace(bytes: &[u8]) -> Option<Trace> {
-    let locations = crate::gpx::parse_trace_points(bytes);
-    let inner = core_build_trace(&locations).ok()?;
-    Some(Trace::new(
-        inner,
-        crate::gpx::parse_waypoints(bytes),
-        crate::gpx::parse_metadata(bytes),
-    ))
+    let parsed = crate::gpx::parse_all(bytes);
+    let inner = core_build_trace(&parsed.locations).ok()?;
+    Some(Trace::new(inner, parsed.waypoints, parsed.metadata))
 }
 
 /// Shared implementation behind `analyzeGpx` and `Trace::analyze`.
 fn compute_route_analysis(trace: &Trace, options: &WasmAnalyzeOptions) -> WasmRouteAnalysis {
-    let weather = options.weather_lookup();
+    let analysis_opts = options.to_analysis_options();
 
     let legs = crate::leg::compute_from_waypoints(trace.inner(), trace.waypoints());
-    let sections = crate::section::compute_from_waypoints(
-        trace.inner(),
-        trace.waypoints(),
-        options.base_pace_s_per_km(),
-        options.k_fatigue(),
-        options.life_base_stop_s(),
-        &weather,
-    );
-    let stages = crate::stage::compute_from_waypoints(
-        trace.inner(),
-        trace.waypoints(),
-        options.base_pace_s_per_km(),
-        options.k_fatigue(),
-        options.life_base_stop_s(),
-        &weather,
-    );
+    let sections =
+        crate::section::compute_from_waypoints(trace.inner(), trace.waypoints(), &analysis_opts);
+    let stages =
+        crate::stage::compute_from_waypoints(trace.inner(), trace.waypoints(), &analysis_opts);
 
     WasmRouteAnalysis::new(
         trace.waypoints().iter().map(Into::into).collect(),
@@ -133,7 +185,7 @@ fn compute_route_analysis(trace: &Trace, options: &WasmAnalyzeOptions) -> WasmRo
 /// re-solves its own calibration factor against its own weather-per-range
 /// lookups rather than sharing one result.
 fn compute_recalibration(trace: &Trace, options: &WasmRecalibrateOptions) -> WasmRecalibration {
-    let weather = options.weather_lookup();
+    let analysis_opts = options.to_analysis_options();
 
     let sections = calibration::recalibrate_from_current(
         trace.inner(),
@@ -141,10 +193,7 @@ fn compute_recalibration(trace: &Trace, options: &WasmRecalibrateOptions) -> Was
         BoundaryKind::Section,
         options.current_index(),
         options.actual_elapsed_s(),
-        options.base_pace_s_per_km(),
-        options.k_fatigue(),
-        options.life_base_stop_s(),
-        &weather,
+        &analysis_opts,
     );
     let stages = calibration::recalibrate_from_current(
         trace.inner(),
@@ -152,10 +201,7 @@ fn compute_recalibration(trace: &Trace, options: &WasmRecalibrateOptions) -> Was
         BoundaryKind::Stage,
         options.current_index(),
         options.actual_elapsed_s(),
-        options.base_pace_s_per_km(),
-        options.k_fatigue(),
-        options.life_base_stop_s(),
-        &weather,
+        &analysis_opts,
     );
 
     WasmRecalibration::new(sections, stages)
@@ -183,21 +229,41 @@ mod pipeline_tests {
 </gpx>"#;
 
     #[test]
-    fn parse_gpx_stores_waypoints_and_metadata_on_the_trace() {
+    fn parse_gpx_returns_trace_points_only_no_waypoints_no_metadata() {
         let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
         assert_eq!(trace.inner().locations.len(), 5);
-        assert_eq!(trace.waypoints().len(), 3);
-        assert_eq!(trace.waypoints()[0].name, "Start");
-        // No <metadata> block in the fixture, so parse_metadata falls back to
-        // the first <name> anywhere in the document — here, the waypoint's.
-        assert_eq!(trace.metadata().name.as_deref(), Some("Start"));
+        // parseGpx is the lean path — waypoints and metadata are NOT loaded.
+        assert!(trace.waypoints().is_empty());
+        assert!(trace.metadata().name.is_none());
+    }
+
+    #[test]
+    fn parse_waypoints_js_returns_all_waypoints() {
+        // Test the underlying GPX parser — serde_wasm_bindgen::to_value cannot
+        // run on native targets, so we validate the raw parse result instead.
+        let waypoints = crate::gpx::parse_waypoints(SAMPLE_GPX);
+        assert_eq!(waypoints.len(), 3);
+        assert_eq!(waypoints[0].name, "Start");
+        assert_eq!(waypoints[1].name, "Life Base");
+        assert_eq!(waypoints[2].name, "Arrival");
+    }
+
+    #[test]
+    fn parse_metadata_js_falls_back_to_first_name_tag() {
+        // Test the underlying GPX parser — serde_wasm_bindgen::to_value cannot
+        // run on native targets, so we validate the raw parse result instead.
+        let metadata = crate::gpx::parse_metadata(SAMPLE_GPX);
+        // No <metadata> block in the fixture, so falls back to the first <name>
+        // anywhere in the document — here, the first waypoint's name.
+        assert_eq!(metadata.name.as_deref(), Some("Start"));
     }
 
     // Asserts on the serialized JSON shape (what JS actually receives) rather
     // than poking at DTO internals, so the DTOs don't need test-only accessors.
     #[test]
     fn analyze_computes_legs_sections_and_stages_from_a_parsed_trace() {
-        let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
+        // parse_wasm_trace (the full path) loads waypoints — required for analysis.
+        let trace = parse_wasm_trace(SAMPLE_GPX).expect("sample GPX should parse");
         let analysis = compute_route_analysis(&trace, &WasmAnalyzeOptions::sample());
         let json = serde_json::to_value(&analysis).expect("analysis should serialize");
 
@@ -235,7 +301,8 @@ mod pipeline_tests {
     // than poking at DTO internals, so the DTOs don't need test-only accessors.
     #[test]
     fn recalibrate_computes_section_and_stage_etas_from_a_parsed_trace() {
-        let trace = parse_gpx(SAMPLE_GPX).expect("sample GPX should parse");
+        // parse_wasm_trace (the full path) loads waypoints — required for recalibration.
+        let trace = parse_wasm_trace(SAMPLE_GPX).expect("sample GPX should parse");
         // current_index=2 puts the runner mid-route; actual_elapsed_s well above
         // the 300s gate so a non-trivial calibration factor is solved.
         let recalibration =

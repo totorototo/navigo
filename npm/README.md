@@ -31,14 +31,28 @@ await init();
 
 ### `parseGpx(bytes: Uint8Array): Trace | null`
 
-Parse a GPX file into a `Trace` — track-points, waypoints and metadata are
-all parsed once and stored in WASM memory. Returns `null` when the file
-contains no valid track-points.
+Parse a GPX file into a `Trace` — **only `<trkpt>` track-points are parsed**;
+waypoints and metadata are intentionally skipped so this path stays lean.
+Returns `null` when the file contains no valid track-points.
+
+Call `parseWaypoints(bytes)` and/or `parseMetadata(bytes)` separately when you
+need that data. If you need the full race analysis in one shot, use
+`analyzeGpx(bytes, options)` instead.
 
 ```js
 const bytes = new Uint8Array(await file.arrayBuffer());
 const trace = parseGpx(bytes);
 ```
+
+### `parseWaypoints(bytes: Uint8Array): Waypoint[]`
+
+Parse only the `<wpt>` elements from raw GPX bytes. Returns an array of
+waypoint objects (empty array when none found).
+
+### `parseMetadata(bytes: Uint8Array): { name, description }`
+
+Parse only the `<metadata>` block from raw GPX bytes. Returns an object with
+`name` and `description` fields (each `null` when absent).
 
 ### `trace.analyze(options): object | null`
 
@@ -185,7 +199,7 @@ const trace = buildTrace(pts);
 `Trace` lives in WASM linear memory; the JS object is just a pointer.
 Always call `.free()` when done, or use a `FinalizationRegistry`.
 
-### Properties (getters — copy WASM → JS heap; call once and cache)
+### Scalar properties (zero-copy — read from WASM registers)
 
 | Property                    | Type           | Description                             |
 | --------------------------- | -------------- | --------------------------------------- |
@@ -193,13 +207,18 @@ Always call `.free()` when done, or use a `FinalizationRegistry`.
 | `totalElevationGain`        | `number`       | Cumulative elevation gain (m)           |
 | `totalElevationLoss`        | `number`       | Cumulative elevation loss (m)           |
 | `locationCount`             | `number`       | Number of (D-P simplified) locations    |
-| `locationsFlat`             | `Float64Array` | `[lon, lat, alt, …]` for every location |
-| `cumulativeDistances`       | `Float64Array` | Distance at each location (km)          |
-| `cumulativeElevationGains`  | `Float64Array` | Cumulative gain at each location (m)    |
-| `cumulativeElevationLosses` | `Float64Array` | Cumulative loss at each location (m)    |
-| `slopes`                    | `Float64Array` | Slope between consecutive locations (%) |
-| `peaks`                     | `Uint32Array`  | Peak location indices                   |
-| `valleys`                   | `Uint32Array`  | Valley location indices                 |
+
+### Array methods (copy WASM → JS heap; call once and cache)
+
+| Method                         | Returns        | Description                             |
+| ------------------------------ | -------------- | --------------------------------------- |
+| `getLocationsFlat()`           | `Float64Array` | `[lon, lat, alt, …]` for every location |
+| `getCumulativeDistances()`     | `Float64Array` | Distance at each location (km)          |
+| `getCumulativeElevationGains()`| `Float64Array` | Cumulative gain at each location (m)    |
+| `getCumulativeElevationLosses()`| `Float64Array`| Cumulative loss at each location (m)    |
+| `getSlopes()`                  | `Float64Array` | Slope at each location (%)              |
+| `getPeaks()`                   | `Uint32Array`  | Peak location indices                   |
+| `getValleys()`                 | `Uint32Array`  | Valley location indices                 |
 
 ### Methods
 

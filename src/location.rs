@@ -1,3 +1,5 @@
+//! Geographic point primitive with haversine distance and bearing computations.
+
 use crate::{Area, Elevation};
 
 #[derive(PartialEq, Debug, Copy, Clone)]

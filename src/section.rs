@@ -1,6 +1,5 @@
-use crate::location::Location;
-use crate::pace_model::{WeatherLookup, RECOVERY_LIFE_BASE};
-use crate::segment;
+use crate::interval::{compute_intervals, IntervalMetrics};
+use crate::pace_model::AnalysisOptions;
 use crate::trace::Trace;
 use crate::waypoint::Waypoint;
 
@@ -37,6 +36,36 @@ pub struct SectionStats {
     pub stop_duration: Option<u32>,
 }
 
+impl From<IntervalMetrics> for SectionStats {
+    fn from(m: IntervalMetrics) -> Self {
+        Self {
+            section_id: m.id,
+            stage_idx: m.stage_idx,
+            start_index: m.start_index,
+            end_index: m.end_index,
+            point_count: m.point_count,
+            start_location: m.start_location,
+            end_location: m.end_location,
+            total_distance_km: m.total_distance_km,
+            total_elevation_gain_m: m.total_elevation_gain_m,
+            total_elevation_loss_m: m.total_elevation_loss_m,
+            avg_slope: m.avg_slope,
+            max_slope: m.max_slope,
+            min_elevation: m.min_elevation,
+            max_elevation: m.max_elevation,
+            start_time: m.start_time,
+            end_time: m.end_time,
+            bearing: m.bearing,
+            difficulty: m.difficulty,
+            estimated_duration_s: m.estimated_duration_s,
+            pace_factor: m.pace_factor,
+            max_completion_time: m.max_completion_time,
+            cutoff_ratio: m.cutoff_ratio,
+            stop_duration: m.stop_duration,
+        }
+    }
+}
+
 /// Compute section statistics between consecutive section-boundary waypoints
 /// (Start / TimeBarrier / LifeBase / Arrival).
 ///
@@ -44,164 +73,23 @@ pub struct SectionStats {
 pub fn compute_from_waypoints(
     trace: &Trace,
     waypoints: &[Waypoint],
-    base_pace_s_per_km: f64,
-    k_fatigue: f64,
-    life_base_stop_s: u32,
-    weather: &WeatherLookup,
+    options: &AnalysisOptions,
 ) -> Option<Vec<SectionStats>> {
-    let section_wpts: Vec<&Waypoint> = waypoints
-        .iter()
-        .filter(|w| w.is_section_boundary())
-        .collect();
-    if section_wpts.len() < 2 {
-        return None;
-    }
-
-    let mut sections = Vec::new();
-    let mut search_start = 0usize;
-    let mut current_stage_idx = 0usize;
-    let mut stage_active = false;
-    let mut d_eff_m = 0.0_f64;
-    let clock_start = section_wpts[0].time;
-    let mut elapsed_s = 0.0_f64;
-
-    for i in 0..section_wpts.len() - 1 {
-        if section_wpts[i].is_stage_boundary() {
-            if stage_active {
-                current_stage_idx += 1;
-            } else {
-                stage_active = true;
-            }
-        }
-
-        let start_wpt = section_wpts[i];
-        let end_wpt = section_wpts[i + 1];
-
-        let start_target = Location {
-            longitude: start_wpt.longitude,
-            latitude: start_wpt.latitude,
-            altitude: 0.0,
-        };
-        let end_target = Location {
-            longitude: end_wpt.longitude,
-            latitude: end_wpt.latitude,
-            altitude: 0.0,
-        };
-
-        let start_index = match trace.find_closest_point_from(&start_target, search_start) {
-            Some((_, idx, _)) => idx,
-            None => continue,
-        };
-        let end_index = match trace.find_closest_point_from(&end_target, start_index + 1) {
-            Some((_, idx, _)) => idx,
-            None => continue,
-        };
-        search_start = end_index;
-
-        if start_index >= end_index {
-            continue;
-        }
-
-        let bearing = start_target.calculate_bearing_to(&end_target);
-        let dist_km =
-            trace.cumulative_distances[end_index] - trace.cumulative_distances[start_index];
-        let elevation_gain_m = trace.cumulative_elevation_gains[end_index]
-            - trace.cumulative_elevation_gains[start_index];
-        let elevation_loss_m = trace.cumulative_elevation_losses[end_index]
-            - trace.cumulative_elevation_losses[start_index];
-
-        let section_weather = weather.find(&end_wpt.name);
-        let metrics = segment::compute(
-            trace,
-            start_index,
-            end_index,
-            base_pace_s_per_km,
-            k_fatigue,
-            clock_start,
-            section_weather,
-            &mut d_eff_m,
-            &mut elapsed_s,
-        );
-
-        if end_wpt.wpt_type.as_deref() == Some("LifeBase") {
-            d_eff_m *= 1.0 - RECOVERY_LIFE_BASE;
-        }
-
-        let avg_slope = if dist_km > 0.0 {
-            ((elevation_gain_m - elevation_loss_m) / (dist_km * 1000.0)) * 100.0
-        } else {
-            0.0
-        };
-        let avg_pf = if dist_km > 0.0 {
-            metrics.total_weighted_dist_km / dist_km
-        } else {
-            1.0
-        };
-        let stop_secs: f64 = if let Some(sd) = end_wpt.stop_duration {
-            sd as f64
-        } else if end_wpt.wpt_type.as_deref() == Some("LifeBase") {
-            life_base_stop_s as f64
-        } else {
-            0.0
-        };
-        let estimated_duration_s = metrics.total_time + stop_secs;
-        let difficulty: u8 = if avg_pf < 1.1 {
-            1
-        } else if avg_pf < 1.4 {
-            2
-        } else if avg_pf < 1.8 {
-            3
-        } else if avg_pf < 2.5 {
-            4
-        } else {
-            5
-        };
-        let max_completion_time = match (start_wpt.time, end_wpt.time) {
-            (Some(t0), Some(t1)) => Some(t1 - t0),
-            _ => None,
-        };
-        let cutoff_ratio = max_completion_time.and_then(|mct| {
-            if mct <= 0 {
-                None
-            } else {
-                Some(estimated_duration_s / mct as f64)
-            }
-        });
-
-        sections.push(SectionStats {
-            section_id: i,
-            stage_idx: current_stage_idx,
-            start_index,
-            end_index,
-            point_count: end_index - start_index + 1,
-            start_location: start_wpt.name.clone(),
-            end_location: end_wpt.name.clone(),
-            total_distance_km: dist_km,
-            total_elevation_gain_m: elevation_gain_m,
-            total_elevation_loss_m: elevation_loss_m,
-            avg_slope,
-            max_slope: metrics.max_slope,
-            min_elevation: metrics.min_elevation,
-            max_elevation: metrics.max_elevation,
-            start_time: start_wpt.time,
-            end_time: end_wpt.time,
-            bearing,
-            difficulty,
-            estimated_duration_s,
-            pace_factor: avg_pf,
-            max_completion_time,
-            cutoff_ratio,
-            stop_duration: end_wpt.stop_duration,
-        });
-    }
-
-    Some(sections)
+    let intervals = compute_intervals(
+        trace,
+        waypoints,
+        options,
+        Waypoint::is_section_boundary,
+        true,
+    )?;
+    Some(intervals.into_iter().map(SectionStats::from).collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, DEFAULT_LIFE_BASE_STOP_S, K_FATIGUE};
+    use crate::location::Location;
+    use crate::pace_model::AnalysisOptions;
 
     fn make_trace(n: usize) -> Trace {
         let locs: Vec<Location> = (0..n)
@@ -229,10 +117,6 @@ mod tests {
         }
     }
 
-    fn empty_weather() -> WeatherLookup {
-        WeatherLookup::empty()
-    }
-
     #[test]
     fn returns_none_with_no_section_boundaries() {
         let trace = make_trace(4);
@@ -240,33 +124,7 @@ mod tests {
             make_waypoint(0.0, "A", None, None),
             make_waypoint(0.001, "B", None, None),
         ];
-        assert!(compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather()
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn returns_none_with_only_one_boundary() {
-        let trace = make_trace(4);
-        let waypoints = vec![
-            make_waypoint(0.0, "Start", Some("Start"), None),
-            make_waypoint(0.001, "Plain", None, None),
-        ];
-        assert!(compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather()
-        )
-        .is_none());
+        assert!(compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).is_none());
     }
 
     #[test]
@@ -276,15 +134,8 @@ mod tests {
             make_waypoint(0.0, "Start", Some("Start"), None),
             make_waypoint(0.005, "TB1", Some("TimeBarrier"), None),
         ];
-        let sections = compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather(),
-        )
-        .unwrap();
+        let sections =
+            compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).unwrap();
         assert_eq!(sections.len(), 1);
         assert!(sections[0].total_distance_km > 0.0);
         assert!(sections[0].point_count > 0);
@@ -300,15 +151,8 @@ mod tests {
             make_waypoint(0.004, "Plain2", None, None),
             make_waypoint(0.007, "End", Some("Arrival"), None),
         ];
-        let sections = compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather(),
-        )
-        .unwrap();
+        let sections =
+            compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).unwrap();
         assert_eq!(sections.len(), 2);
     }
 
@@ -329,15 +173,8 @@ mod tests {
             make_waypoint(0.009, "TB2", Some("TimeBarrier"), None),
             make_waypoint(0.011, "Arrival", Some("Arrival"), None),
         ];
-        let sections = compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather(),
-        )
-        .unwrap();
+        let sections =
+            compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).unwrap();
         assert_eq!(sections.len(), 4);
         assert_eq!(sections[0].stage_idx, 0);
         assert_eq!(sections[1].stage_idx, 0);
@@ -352,15 +189,8 @@ mod tests {
             make_waypoint(0.0, "Start", Some("Start"), Some(1_000_000)),
             make_waypoint(0.005, "End", Some("TimeBarrier"), Some(1_007_200)),
         ];
-        let sections = compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather(),
-        )
-        .unwrap();
+        let sections =
+            compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).unwrap();
         assert_eq!(sections[0].max_completion_time, Some(7200));
         assert_eq!(sections[0].start_time, Some(1_000_000));
         assert_eq!(sections[0].end_time, Some(1_007_200));
@@ -373,15 +203,8 @@ mod tests {
             make_waypoint(0.0, "Start", Some("Start"), None),
             make_waypoint(0.002, "End", Some("Arrival"), None),
         ];
-        let sections = compute_from_waypoints(
-            &trace,
-            &waypoints,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            DEFAULT_LIFE_BASE_STOP_S,
-            &empty_weather(),
-        )
-        .unwrap();
+        let sections =
+            compute_from_waypoints(&trace, &waypoints, &AnalysisOptions::default()).unwrap();
         assert_eq!(sections[0].max_completion_time, None);
         assert_eq!(sections[0].cutoff_ratio, None);
     }
@@ -409,19 +232,13 @@ mod tests {
         let sections_lb = compute_from_waypoints(
             &trace,
             &wpts_lb,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &empty_weather(),
+            &AnalysisOptions::default().life_base_stop(0),
         )
         .unwrap();
         let sections_tb = compute_from_waypoints(
             &trace,
             &wpts_tb,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &empty_weather(),
+            &AnalysisOptions::default().life_base_stop(0),
         )
         .unwrap();
         assert!(
@@ -454,19 +271,13 @@ mod tests {
         let day = compute_from_waypoints(
             &trace,
             &wpts_day,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &empty_weather(),
+            &AnalysisOptions::default().life_base_stop(0),
         )
         .unwrap();
         let night_s = compute_from_waypoints(
             &trace,
             &wpts_night,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &empty_weather(),
+            &AnalysisOptions::default().life_base_stop(0),
         )
         .unwrap();
         assert!(night_s[0].estimated_duration_s > day[0].estimated_duration_s);

@@ -77,20 +77,22 @@ let trace: Result<Trace, TraceError> = Trace::new(&locations);
 let trace: Result<Trace, TraceError> = build_trace(&locations);
 ```
 
-### precomputed fields
+### precomputed fields (accessed via methods)
 
 ```rust
-trace.locations                   // Vec<Location>  — simplified working set
-trace.cumulative_distances        // Vec<f64>        — km from start, [0] == 0.0
-trace.cumulative_elevation_gains  // Vec<f64>        — denoised gain in meters
-trace.cumulative_elevation_losses // Vec<f64>        — denoised loss in meters
-trace.slopes                      // Vec<f64>        — % grade at each point
-trace.peaks                       // Vec<usize>      — indices of detected peaks
-trace.valleys                     // Vec<usize>      — indices of detected valleys
-trace.climbs                      // Vec<ClimbStats> — qualifying climb segments
-trace.total_distance              // f64             — total distance in km
-trace.total_elevation_gain        // f64             — total denoised gain in meters
-trace.total_elevation_loss        // f64             — total denoised loss in meters
+trace.locations()                   // &[Location]    — simplified working set
+trace.cumulative_distances()        // &[f64]         — km from start, [0] == 0.0
+trace.cumulative_elevation_gains()  // &[f64]         — denoised gain in meters
+trace.cumulative_elevation_losses() // &[f64]         — denoised loss in meters
+trace.slopes()                      // &[f64]         — % grade at each point
+trace.peaks()                       // &[usize]       — indices of detected peaks
+trace.valleys()                     // &[usize]       — indices of detected valleys
+trace.climbs()                      // &[ClimbStats]  — qualifying climb segments
+trace.total_distance()              // f64            — total distance in km
+trace.total_elevation_gain()        // f64            — total denoised gain in meters
+trace.total_elevation_loss()        // f64            — total denoised loss in meters
+trace.area()                        // &Area          — bounding box
+trace.elevation()                   // &Elevation     — raw positive/negative totals
 ```
 
 ### methods
@@ -130,13 +132,13 @@ let result = trace.find_closest_point_from(&target, start_from);
 - **bounding box** (never fails — a trace always has at least one point):
 
 ```rust
-let area: Area = trace.area();
+let area: &Area = trace.area();
 ```
 
 - **sub-section by index range** (inclusive):
 
 ```rust
-let section: Result<Vec<Location>, TraceError> = trace.get_section(start_index, end_index);
+let section: Result<&[Location], TraceError> = trace.get_section(start_index, end_index);
 ```
 
 ### climb stats
@@ -298,8 +300,15 @@ let legs: Vec<leg::LegStats> = leg::compute_from_waypoints(&trace, &waypoints);
 Sections are legs enriched with pace-model data (Minetti + fatigue + circadian + weather).
 
 ```rust
+use navigo::{AnalysisOptions, section};
+
+let options = AnalysisOptions::default()
+    .base_pace(500.0)
+    .fatigue(0.002)
+    .life_base_stop(3600);
+
 let sections: Option<Vec<section::SectionStats>> =
-    section::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
+    section::compute_from_waypoints(&trace, &waypoints, &options);
 // sections[i].section_id / stage_idx
 // sections[i].start_location / end_location
 // sections[i].total_distance_km
@@ -320,7 +329,7 @@ Stages group sections between Start / LifeBase / Arrival boundaries (TimeBarrier
 
 ```rust
 let stages: Option<Vec<stage::StageStats>> =
-    stage::compute_from_waypoints(&trace, &waypoints, BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather);
+    stage::compute_from_waypoints(&trace, &waypoints, &options);
 // stages[i].stage_id
 // stages[i].start_location / end_location
 // stages[i].total_distance_km
@@ -351,12 +360,18 @@ Recalibrate remaining ETAs mid-race given the actual elapsed time at a known pos
 
 ```rust
 use navigo::calibration::{recalibrate_from_current, BoundaryKind};
+use navigo::AnalysisOptions;
+
+let options = AnalysisOptions::default()
+    .base_pace(500.0)
+    .fatigue(0.002)
+    .life_base_stop(0);
 
 let result = recalibrate_from_current(
     &trace, &waypoints, BoundaryKind::Section,
     current_index,   // trace point index snapped to current position
     actual_elapsed_s,
-    BASE_PACE, K_FATIGUE, LIFE_BASE_STOP, &weather,
+    &options,
 );
 
 if let Some(cal) = result {

@@ -1,3 +1,9 @@
+//! Leg statistics — Naismith-rule geometry between consecutive waypoints.
+//!
+//! Legs are the finest-grained partition of a route: every pair of adjacent
+//! waypoints (regardless of type) forms one leg. Unlike sections/stages,
+//! legs do not use the full physiological pace model.
+
 use crate::location::Location;
 use crate::trace::Trace;
 use crate::waypoint::Waypoint;

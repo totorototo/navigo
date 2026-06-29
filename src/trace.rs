@@ -23,24 +23,26 @@ const EARLY_STOP_KM: f64 = 2.0;
 #[derive(Debug, PartialEq)]
 pub struct Trace {
     /// Possibly D-P simplified locations (owned). Never empty.
-    pub locations: Vec<Location>,
+    pub(crate) locations: Vec<Location>,
     /// Cumulative haversine distance from start, km.  `[0] == 0.0`.
-    pub cumulative_distances: Vec<f64>,
+    pub(crate) cumulative_distances: Vec<f64>,
     /// Cumulative denoised elevation gain at each location (m).
-    pub cumulative_elevation_gains: Vec<f64>,
+    pub(crate) cumulative_elevation_gains: Vec<f64>,
     /// Cumulative denoised elevation loss at each location (m).
-    pub cumulative_elevation_losses: Vec<f64>,
+    pub(crate) cumulative_elevation_losses: Vec<f64>,
     /// Smoothed slope (% grade) at each location.
-    pub slopes: Vec<f64>,
+    pub(crate) slopes: Vec<f64>,
     /// Indices of detected peaks.
-    pub peaks: Vec<usize>,
+    pub(crate) peaks: Vec<usize>,
     /// Indices of detected valleys.
-    pub valleys: Vec<usize>,
+    pub(crate) valleys: Vec<usize>,
     /// Qualifying Garmin-style climb segments.
-    pub climbs: Vec<ClimbStats>,
-    pub total_distance: f64,
-    pub total_elevation_gain: f64,
-    pub total_elevation_loss: f64,
+    pub(crate) climbs: Vec<ClimbStats>,
+    pub(crate) total_distance: f64,
+    pub(crate) total_elevation_gain: f64,
+    pub(crate) total_elevation_loss: f64,
+    pub(crate) area: Area,
+    pub(crate) elevation: Elevation,
 }
 
 impl Trace {
@@ -67,18 +69,50 @@ impl Trace {
             .last()
             .expect("locations is non-empty, so cumulative_distances has at least one element");
 
+        let area = locations.iter().fold(
+            Area {
+                min_longitude: locations[0].longitude,
+                max_longitude: locations[0].longitude,
+                min_latitude: locations[0].latitude,
+                max_latitude: locations[0].latitude,
+            },
+            |acc, loc| Area {
+                min_latitude: acc.min_latitude.min(loc.latitude),
+                max_latitude: acc.max_latitude.max(loc.latitude),
+                min_longitude: acc.min_longitude.min(loc.longitude),
+                max_longitude: acc.max_longitude.max(loc.longitude),
+            },
+        );
+
+        let elevation = locations
+            .windows(2)
+            .map(|w| w[1].altitude - w[0].altitude)
+            .fold(
+                Elevation {
+                    positive: 0.0,
+                    negative: 0.0,
+                },
+                |mut acc, delta| {
+                    if delta > 0.0 {
+                        acc.positive += delta;
+                    } else {
+                        acc.negative += delta.abs();
+                    }
+                    acc
+                },
+            );
+
         // Denoised elevation computed on the full-resolution raw signal.
         let gain_loss = compute_gain_loss(raw, ELEV_MEDIAN_RADIUS_KM, ELEV_NOISE_THRESHOLD_M);
 
         // Map raw cumulative values back to the (possibly simplified) working set.
-        let cumulative_elevation_gains: Vec<f64> = src_indices
-            .iter()
-            .map(|&src| gain_loss.cum_gain[src])
-            .collect();
-        let cumulative_elevation_losses: Vec<f64> = src_indices
-            .iter()
-            .map(|&src| gain_loss.cum_loss[src])
-            .collect();
+        let n_pts = src_indices.len();
+        let mut cumulative_elevation_gains = Vec::with_capacity(n_pts);
+        let mut cumulative_elevation_losses = Vec::with_capacity(n_pts);
+        for &src in &src_indices {
+            cumulative_elevation_gains.push(gain_loss.cum_gain[src]);
+            cumulative_elevation_losses.push(gain_loss.cum_loss[src]);
+        }
 
         let slopes = compute_slopes(&locations, &cumulative_distances);
 
@@ -108,7 +142,66 @@ impl Trace {
             total_distance,
             total_elevation_gain: gain_loss.total_gain,
             total_elevation_loss: gain_loss.total_loss,
+            area,
+            elevation,
         })
+    }
+
+    // ── Public accessors ──────────────────────────────────────────────────────
+
+    /// Simplified locations slice. Never empty.
+    pub fn locations(&self) -> &[Location] {
+        &self.locations
+    }
+
+    /// Cumulative haversine distances (km). Same length as `locations()`.
+    pub fn cumulative_distances(&self) -> &[f64] {
+        &self.cumulative_distances
+    }
+
+    /// Cumulative denoised elevation gain at each point (m).
+    pub fn cumulative_elevation_gains(&self) -> &[f64] {
+        &self.cumulative_elevation_gains
+    }
+
+    /// Cumulative denoised elevation loss at each point (m).
+    pub fn cumulative_elevation_losses(&self) -> &[f64] {
+        &self.cumulative_elevation_losses
+    }
+
+    /// Smoothed slope (% grade) at each point.
+    pub fn slopes(&self) -> &[f64] {
+        &self.slopes
+    }
+
+    /// Indices of detected elevation peaks.
+    pub fn peaks(&self) -> &[usize] {
+        &self.peaks
+    }
+
+    /// Indices of detected elevation valleys.
+    pub fn valleys(&self) -> &[usize] {
+        &self.valleys
+    }
+
+    /// Qualifying Garmin-style climb segments.
+    pub fn climbs(&self) -> &[ClimbStats] {
+        &self.climbs
+    }
+
+    /// Total trace distance in km.
+    pub fn total_distance(&self) -> f64 {
+        self.total_distance
+    }
+
+    /// Denoised total elevation gain (m).
+    pub fn total_elevation_gain(&self) -> f64 {
+        self.total_elevation_gain
+    }
+
+    /// Denoised total elevation loss (m).
+    pub fn total_elevation_loss(&self) -> f64 {
+        self.total_elevation_loss
     }
 
     // ── Distance helpers ──────────────────────────────────────────────────────
@@ -183,50 +276,14 @@ impl Trace {
         self.total_distance
     }
 
-    /// Bounding box of all locations. Never fails — a `Trace` always has at
-    /// least one location.
-    pub fn area(&self) -> Area {
-        let first = self
-            .locations
-            .first()
-            .expect("Trace is never empty by construction");
-        self.locations.iter().fold(
-            Area {
-                min_longitude: first.longitude,
-                max_longitude: first.longitude,
-                min_latitude: first.latitude,
-                max_latitude: first.latitude,
-            },
-            |acc, loc| Area {
-                min_latitude: acc.min_latitude.min(loc.latitude),
-                max_latitude: acc.max_latitude.max(loc.latitude),
-                min_longitude: acc.min_longitude.min(loc.longitude),
-                max_longitude: acc.max_longitude.max(loc.longitude),
-            },
-        )
+    /// Bounding box of all locations.
+    pub fn area(&self) -> &Area {
+        &self.area
     }
 
     /// Raw (non-denoised) elevation gain/loss over the working locations.
-    /// Provided for backward compatibility; prefer `total_elevation_gain/loss`
-    /// for accurate denoised values.
-    pub fn elevation(&self) -> Elevation {
-        self.locations
-            .windows(2)
-            .map(|w| w[1].altitude - w[0].altitude)
-            .fold(
-                Elevation {
-                    positive: 0.0,
-                    negative: 0.0,
-                },
-                |mut acc, delta| {
-                    if delta > 0.0 {
-                        acc.positive += delta;
-                    } else {
-                        acc.negative += delta.abs();
-                    }
-                    acc
-                },
-            )
+    pub fn elevation(&self) -> &Elevation {
+        &self.elevation
     }
 
     /// Sub-slice by index range (both ends inclusive).
@@ -234,7 +291,7 @@ impl Trace {
         &self,
         start_index: usize,
         end_index: usize,
-    ) -> Result<Vec<Location>, TraceError> {
+    ) -> Result<&[Location], TraceError> {
         if start_index >= end_index {
             return Err(TraceError::InvalidRange {
                 start_index,
@@ -247,7 +304,7 @@ impl Trace {
                 len: self.locations.len(),
             });
         }
-        Ok(self.locations[start_index..=end_index].to_vec())
+        Ok(&self.locations[start_index..=end_index])
     }
 }
 
@@ -482,7 +539,7 @@ mod tests {
         let locations = helper::get_locations();
         let trace = Trace::new(&locations).unwrap();
         let section = trace.get_section(1, 3).unwrap();
-        assert_eq!(section, trace.locations[1..=3].to_vec());
+        assert_eq!(section, &trace.locations[1..=3]);
     }
 
     #[test]

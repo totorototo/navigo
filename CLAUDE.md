@@ -59,31 +59,36 @@ from `lib.rs` and the WASM layer wraps it rather than re-implementing it.
 - `simplify.rs`, `elevation.rs`, `extrema.rs`, `climbs.rs` — algorithms run
   once inside `Trace::new` (Douglas-Peucker, median-smoothed gain/loss with
   hysteresis, AMPD peak detection, Garmin Climb Pro thresholds).
-- `trace.rs` — the `Trace` struct and its query methods (point/index at
-  distance, closest-point search, slicing).
+- `trace.rs` — the `Trace` struct (fields `pub(crate)`, public accessor
+  methods) and query methods (point/index at distance, closest-point, slicing).
 - `gpx.rs`, `waypoint.rs` — GPX byte-scanning parser; waypoints are classified
   as section/stage boundaries by `wpt_type` (Start/LifeBase/Arrival/etc).
 - `minetti.rs`, `pace_model.rs` — pure functions: metabolic cost vs. grade,
-  fatigue decay, circadian rhythm, weather factors. No dependency on `Trace`.
-- `leg.rs` → `section.rs` → `stage.rs` — each builds on the one below it by
-  consuming consecutive waypoint pairs from the same `Trace`. `leg` is plain
-  Naismith-rule geometry; `section` adds the full pace model; `stage` groups
-  sections between Start/LifeBase/Arrival boundaries.
+  fatigue decay, circadian rhythm, weather factors. `AnalysisOptions` builder
+  struct lives here. No dependency on `Trace`.
+- `segment.rs` — inner pace/fatigue/circadian loop over a trace index range;
+  `SegmentParams` (immutable config) + `SegmentState` (mutable d_eff/elapsed).
+- `interval.rs` — shared template `compute_intervals()` used by both
+  `section.rs` and `stage.rs`, eliminating duplicated boundary-iteration logic.
+- `leg.rs` — Naismith-rule geometry between consecutive waypoints.
+- `section.rs` / `stage.rs` — thin wrappers converting `IntervalMetrics` into
+  typed `SectionStats` / `StageStats`. The actual computation lives in
+  `interval.rs` → `segment.rs`.
 - `calibration.rs` — recomputes remaining ETAs mid-race from one known
-  elapsed-time data point; depends on `section`/`stage` output shapes.
+  elapsed-time data point; uses `AdvanceParams` struct internally.
 - `wasm/` (feature-gated) — `wasm.rs` is the `#[wasm_bindgen]` entry surface
-  (`parseGpx`, `buildTrace`, `analyzeGpx`); `wasm/trace.rs` wraps `Trace` as a
-  JS-visible class; `wasm/dto.rs` defines the serde-serializable shapes
-  returned to JS; `wasm/options.rs` parses the JS options object. This module
-  only adapts — it must not contain analysis logic that belongs in the core
-  modules above.
+  (`parseGpx`, `parseWaypoints`, `parseMetadata`, `buildTrace`, `analyzeGpx`);
+  `wasm/trace.rs` wraps `Trace` as a JS-visible class; `wasm/dto.rs` defines
+  the serde-serializable shapes returned to JS; `wasm/options.rs` parses the
+  JS options object. This module only adapts — it must not contain analysis
+  logic that belongs in the core modules above.
 
 **WASM memory model**: data lives in WASM linear memory; JS holds a thin
 pointer. Only boundaries cross JS↔WASM — scalars are register-free, bulk
-arrays (`locations_flat`, `cumulative_distances`, etc.) are copied once and
-should be cached on the JS side. Every `Trace` obtained from WASM must have
-`.free()` called (no GC bridge) — see `demo/` for the `FinalizationRegistry`
-pattern.
+arrays (`getLocationsFlat()`, `getCumulativeDistances()`, etc.) are copied once
+via explicit method calls and should be cached on the JS side. Every `Trace`
+obtained from WASM must have `.free()` called (no GC bridge) — see `demo/` for
+the `FinalizationRegistry` pattern.
 
 **Error handling**: `Trace::new` is the only fallible entry point in the core
 crate (`TraceError::EmptyTrace`) — once a `Trace` exists, all other methods

@@ -8,7 +8,7 @@ const MAX_WINDOW_SAMPLES: usize = 256;
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct Elevation {
     pub positive: f64,
@@ -64,6 +64,7 @@ pub fn median_smooth(locations: &[Location], cum_dist: &[f64], radius_km: f64) -
     }
 
     let mut scratch = vec![0.0f64; MAX_WINDOW_SAMPLES];
+    let alt_cache: Vec<f64> = locations.iter().map(|l| l.altitude).collect();
     let mut lo = 0usize;
     let mut hi = 0usize;
 
@@ -85,9 +86,7 @@ pub fn median_smooth(locations: &[Location], cum_dist: &[f64], radius_km: f64) -
         }
 
         let count = win_hi - win_lo + 1;
-        for k in 0..count {
-            scratch[k] = locations[win_lo + k].altitude;
-        }
+        scratch[..count].copy_from_slice(&alt_cache[win_lo..win_lo + count]);
         out[i] = median(&mut scratch[..count]);
     }
     out
@@ -169,7 +168,6 @@ pub fn compute_slopes(locations: &[Location], cum_dist: &[f64]) -> Vec<f64> {
             0
         } else {
             let target = current - SLOPE_HALF_WINDOW_KM;
-            // Last index j in [0, i) where cum_dist[j] <= target
             let pos = cum_dist[..i].partition_point(|&d| d <= target);
             if pos > 0 {
                 pos - 1
@@ -181,7 +179,6 @@ pub fn compute_slopes(locations: &[Location], cum_dist: &[f64]) -> Vec<f64> {
         // Furthest point ahead that is still within the window
         let ahead_idx = if i + 1 < n {
             let target = current + SLOPE_HALF_WINDOW_KM;
-            // First index j in (i, n) where cum_dist[j] >= target
             let rel = cum_dist[i + 1..].partition_point(|&d| d < target);
             (i + 1 + rel).min(n - 1)
         } else {
@@ -191,7 +188,6 @@ pub fn compute_slopes(locations: &[Location], cum_dist: &[f64]) -> Vec<f64> {
         let segment_dist_km = cum_dist[ahead_idx] - cum_dist[behind_idx];
         let segment_elev_m = locations[ahead_idx].altitude - locations[behind_idx].altitude;
 
-        // grade % = (rise_m / run_m) × 100 — convert km → m in the denominator
         slopes[i] = if segment_dist_km > 0.0 {
             (segment_elev_m / (segment_dist_km * 1000.0)) * 100.0
         } else {

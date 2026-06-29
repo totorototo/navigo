@@ -7,20 +7,21 @@
 /// - slope = +0.20 → ~9.8 (×2.72 flat)
 pub fn cmet(slope: f64) -> f64 {
     let i = slope.clamp(-0.45, 0.45);
-    let sq = i * i;
-    let cu = sq * i;
-    let qu = cu * i;
-    let qi = qu * i;
-    155.4 * qi - 30.4 * qu - 43.3 * cu + 46.3 * sq + 19.5 * i + 3.6
+    // Horner's method: 155.4i⁵ − 30.4i⁴ − 43.3i³ + 46.3i² + 19.5i + 3.6
+    i.mul_add(
+        i.mul_add(i.mul_add(i.mul_add(155.4 * i - 30.4, -43.3), 46.3), 19.5),
+        3.6,
+    )
 }
 
 pub const CMET_FLAT: f64 = 3.6;
+const INV_CMET_FLAT: f64 = 1.0 / 3.6;
 
 /// Pace factor relative to flat terrain: `cmet(slope) / cmet(0)`.
 ///
 /// Multiply a runner's flat pace by this to get the equivalent effort pace on this slope.
 pub fn pace_factor(slope: f64) -> f64 {
-    cmet(slope) / CMET_FLAT
+    cmet(slope) * INV_CMET_FLAT
 }
 
 #[cfg(test)]

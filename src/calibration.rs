@@ -1,6 +1,6 @@
 use crate::location::Location;
-use crate::pace_model::{WeatherLookup, RECOVERY_LIFE_BASE};
-use crate::segment;
+use crate::pace_model::{AnalysisOptions, WeatherLookup, RECOVERY_LIFE_BASE};
+use crate::segment::{self, SegmentParams, SegmentState};
 use crate::trace::Trace;
 use crate::waypoint::Waypoint;
 
@@ -52,62 +52,62 @@ pub struct Recalibration {
     pub etas: Vec<RecalibratedEta>,
 }
 
-struct ResolvedRange {
+struct ResolvedRange<'a> {
     id: usize,
     start_index: usize,
     end_index: usize,
-    end_wpt_name: String,
-    end_wpt_type: Option<String>,
+    end_wpt_name: &'a str,
+    end_wpt_type: Option<&'a str>,
     end_wpt_stop_duration: Option<u32>,
 }
 
-/// Advance the physiological model across `[from, end)` of one resolved range at `pace`.
-///
-/// When `apply_end_effects` is true (runner reaches the checkpoint), applies LifeBase
-/// fatigue recovery and populates `stop_out` with the planned stop time.
-#[allow(clippy::too_many_arguments)]
-fn advance_range(
-    trace: &Trace,
-    range: &ResolvedRange,
-    from: usize,
-    end: usize,
+/// Parameters shared across all `advance_range` calls within one recalibration.
+struct AdvanceParams<'a> {
     pace_s_per_km: f64,
     k_fatigue: f64,
     clock_start: Option<i64>,
     life_base_stop_s: u32,
-    weather: &WeatherLookup,
-    apply_end_effects: bool,
-    d_eff_m: &mut f64,
-    elapsed_s: &mut f64,
-    stop_out: &mut f64,
-) -> f64 {
-    let range_weather = weather.find(&range.end_wpt_name);
-    let metrics = segment::compute(
-        trace,
-        from,
-        end,
-        pace_s_per_km,
-        k_fatigue,
-        clock_start,
-        range_weather,
-        d_eff_m,
-        elapsed_s,
-    );
+    weather: &'a WeatherLookup,
+}
 
-    *stop_out = 0.0;
-    if apply_end_effects {
-        if range.end_wpt_type.as_deref() == Some("LifeBase") {
-            *d_eff_m *= 1.0 - RECOVERY_LIFE_BASE;
+/// Advance the physiological model across `[from, end)` of one resolved range.
+///
+/// Returns `(moving_time, stop_time)`. When `apply_end_effects` is true (runner
+/// reaches the checkpoint), applies LifeBase fatigue recovery and computes stop.
+fn advance_range(
+    trace: &Trace,
+    range: &ResolvedRange<'_>,
+    from: usize,
+    end: usize,
+    ap: &AdvanceParams<'_>,
+    apply_end_effects: bool,
+    state: &mut SegmentState,
+) -> (f64, f64) {
+    let range_weather = ap.weather.find(range.end_wpt_name);
+    let params = SegmentParams {
+        base_pace_s_per_km: ap.pace_s_per_km,
+        k_fatigue: ap.k_fatigue,
+        clock_start: ap.clock_start,
+        weather: range_weather,
+    };
+    let metrics = segment::compute(trace, from, end, &params, state);
+
+    let stop = if apply_end_effects {
+        if range.end_wpt_type == Some("LifeBase") {
+            state.d_eff_m *= 1.0 - RECOVERY_LIFE_BASE;
         }
-        *stop_out = if let Some(sd) = range.end_wpt_stop_duration {
+        if let Some(sd) = range.end_wpt_stop_duration {
             sd as f64
-        } else if range.end_wpt_type.as_deref() == Some("LifeBase") {
-            life_base_stop_s as f64
+        } else if range.end_wpt_type == Some("LifeBase") {
+            ap.life_base_stop_s as f64
         } else {
             0.0
-        };
-    }
-    metrics.total_time
+        }
+    } else {
+        0.0
+    };
+
+    (metrics.total_time, stop)
 }
 
 /// Recalibrate remaining-interval ETAs from the runner's live progress.
@@ -119,27 +119,26 @@ fn advance_range(
 /// model's prediction so far. Phase 2 forward-predicts remaining intervals at the
 /// calibrated pace, re-seeding the circadian clock to `actual_elapsed_s`.
 ///
-/// Returns `None` when fewer than 2 boundaries exist.
-#[allow(clippy::too_many_arguments)]
-pub fn recalibrate_from_current(
+    /// Returns `None` when fewer than 2 boundaries exist.
+    pub fn recalibrate_from_current(
     trace: &Trace,
     waypoints: &[Waypoint],
     kind: BoundaryKind,
     current_index: usize,
     actual_elapsed_s: f64,
-    base_pace_s_per_km: f64,
-    k_fatigue: f64,
-    life_base_stop_s: u32,
-    weather: &WeatherLookup,
+    options: &AnalysisOptions,
 ) -> Option<Recalibration> {
+    let base_pace_s_per_km = options.base_pace_s_per_km;
+    let k_fatigue = options.k_fatigue;
+    let life_base_stop_s = options.life_base_stop_s;
+    let weather = &options.weather;
     // ── Resolve boundary waypoints onto trace index ranges ─────────────────────
     let boundary_wpts: Vec<&Waypoint> =
         waypoints.iter().filter(|w| is_boundary(w, &kind)).collect();
     if boundary_wpts.len() < 2 {
         return None;
     }
-
-    let mut resolved: Vec<ResolvedRange> = Vec::new();
+    let mut resolved: Vec<ResolvedRange<'_>> = Vec::new();
     let mut search_start = 0usize;
 
     for i in 0..boundary_wpts.len() - 1 {
@@ -171,60 +170,59 @@ pub fn recalibrate_from_current(
             id: i,
             start_index,
             end_index,
-            end_wpt_name: end_wpt.name.clone(),
-            end_wpt_type: end_wpt.wpt_type.clone(),
+            end_wpt_name: end_wpt.name.as_str(),
+            end_wpt_type: end_wpt.wpt_type.as_deref(),
             end_wpt_stop_duration: end_wpt.stop_duration,
         });
     }
 
     let clock_start = boundary_wpts[0].time;
 
-    // ── Phase 1: replay covered intervals at the original pace ─────────────────
-    let mut d_eff_m = 0.0_f64;
-    let mut elapsed_s = 0.0_f64;
+    // ── Phase 1: replay covered intervals at the original pace ──���──────────────
+    let mut state = SegmentState {
+        d_eff_m: 0.0,
+        elapsed_s: 0.0,
+    };
     let mut predicted_so_far = 0.0_f64;
     let mut predicted_stops_so_far = 0.0_f64;
-    let mut stop_scratch = 0.0_f64;
     let mut current_range: usize = resolved.len();
     let mut found_current = false;
 
+    let ap = AdvanceParams {
+        pace_s_per_km: base_pace_s_per_km,
+        k_fatigue,
+        clock_start,
+        life_base_stop_s,
+        weather,
+    };
+
     for (idx, rs) in resolved.iter().enumerate() {
         if current_index >= rs.end_index {
-            predicted_so_far += advance_range(
+            let (moving, stop) = advance_range(
                 trace,
                 rs,
                 rs.start_index,
                 rs.end_index,
-                base_pace_s_per_km,
-                k_fatigue,
-                clock_start,
-                life_base_stop_s,
-                weather,
+                &ap,
                 true,
-                &mut d_eff_m,
-                &mut elapsed_s,
-                &mut stop_scratch,
+                &mut state,
             );
-            predicted_stops_so_far += stop_scratch;
+            predicted_so_far += moving;
+            predicted_stops_so_far += stop;
         } else {
             current_range = idx;
             found_current = true;
             if current_index > rs.start_index {
-                predicted_so_far += advance_range(
+                let (moving, _) = advance_range(
                     trace,
                     rs,
                     rs.start_index,
                     current_index,
-                    base_pace_s_per_km,
-                    k_fatigue,
-                    clock_start,
-                    life_base_stop_s,
-                    weather,
+                    &ap,
                     false,
-                    &mut d_eff_m,
-                    &mut elapsed_s,
-                    &mut stop_scratch,
+                    &mut state,
                 );
+                predicted_so_far += moving;
             }
             break;
         }
@@ -244,7 +242,14 @@ pub fn recalibrate_from_current(
 
     // ── Phase 2: forward-predict remaining intervals at the calibrated pace ────
     // Re-seed the circadian clock to the runner's real elapsed time.
-    elapsed_s = actual_elapsed_s;
+    state.elapsed_s = actual_elapsed_s;
+    let ap2 = AdvanceParams {
+        pace_s_per_km: calibrated_pace,
+        k_fatigue,
+        clock_start,
+        life_base_stop_s,
+        weather,
+    };
 
     let mut etas: Vec<RecalibratedEta> = Vec::with_capacity(resolved.len());
     let mut cumulative = 0.0_f64;
@@ -257,23 +262,9 @@ pub fn recalibrate_from_current(
             } else {
                 rs.start_index
             };
-            let mut stop_secs = 0.0;
-            let moving = advance_range(
-                trace,
-                rs,
-                from,
-                rs.end_index,
-                calibrated_pace,
-                k_fatigue,
-                clock_start,
-                life_base_stop_s,
-                weather,
-                true,
-                &mut d_eff_m,
-                &mut elapsed_s,
-                &mut stop_secs,
-            );
-            let r = moving + stop_secs;
+            let (moving, stop) =
+                advance_range(trace, rs, from, rs.end_index, &ap2, true, &mut state);
+            let r = moving + stop;
             cumulative += r;
             r
         } else {
@@ -300,7 +291,10 @@ pub fn recalibrate_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pace_model::{DEFAULT_BASE_PACE_S_PER_KM, K_FATIGUE};
+
+    fn default_opts() -> AnalysisOptions {
+        AnalysisOptions::default().life_base_stop(0)
+    }
 
     fn build_flat_trace(n: usize) -> Trace {
         let locs: Vec<Location> = (0..n)
@@ -349,10 +343,7 @@ mod tests {
             BoundaryKind::Section,
             0,
             0.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty()
+            &default_opts()
         )
         .is_none());
     }
@@ -366,10 +357,7 @@ mod tests {
             BoundaryKind::Section,
             0,
             0.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
 
@@ -389,10 +377,7 @@ mod tests {
             BoundaryKind::Section,
             10,
             300.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         let slow = recalibrate_from_current(
@@ -401,10 +386,7 @@ mod tests {
             BoundaryKind::Section,
             10,
             1200.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         assert!(slow.calibration_factor > fast.calibration_factor);
@@ -423,10 +405,7 @@ mod tests {
             BoundaryKind::Section,
             15,
             0.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         assert_eq!(result.etas.len(), 4);
@@ -447,10 +426,7 @@ mod tests {
             BoundaryKind::Section,
             0,
             0.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         let as_stages = recalibrate_from_current(
@@ -459,16 +435,12 @@ mod tests {
             BoundaryKind::Stage,
             0,
             0.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         assert_eq!(as_sections.etas.len(), 4);
         assert_eq!(as_stages.etas.len(), 3);
 
-        // Stage 0 (Start→LB1) spans sections 0 + 1.
         let stage0 = as_stages.etas[0].remaining_duration_s;
         let sec01 =
             as_sections.etas[0].remaining_duration_s + as_sections.etas[1].remaining_duration_s;
@@ -481,10 +453,9 @@ mod tests {
         let stop_s: u32 = 1800;
         let moving_elapsed = 1500.0_f64;
 
-        // Waypoints with LB1 having a known stop time.
         let waypoints_with_stop = {
             let mut w = recal_waypoints();
-            w[2].stop_duration = Some(stop_s); // LB1
+            w[2].stop_duration = Some(stop_s);
             w
         };
 
@@ -494,10 +465,7 @@ mod tests {
             BoundaryKind::Section,
             15,
             moving_elapsed,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         let with_stop = recalibrate_from_current(
@@ -506,10 +474,7 @@ mod tests {
             BoundaryKind::Section,
             15,
             moving_elapsed + stop_s as f64,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
 
@@ -520,18 +485,13 @@ mod tests {
     #[test]
     fn calibration_factor_clamped_at_max() {
         let trace = build_flat_trace(30);
-        // current_index=10 gives ~555 s predicted (10 × 0.111 km × 500 s/km) > 300 s gate.
-        // actual_elapsed=4× predicted → raw factor ≈ 4.0 → clamped to CALIBRATION_MAX.
         let result = recalibrate_from_current(
             &trace,
             &recal_waypoints(),
             BoundaryKind::Section,
             10,
             2500.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         assert!((result.calibration_factor - CALIBRATION_MAX).abs() < 1e-9);
@@ -540,17 +500,13 @@ mod tests {
     #[test]
     fn calibration_factor_clamped_at_min() {
         let trace = build_flat_trace(30);
-        // actual_elapsed far below predicted → raw factor << 0.5 → clamped to CALIBRATION_MIN.
         let result = recalibrate_from_current(
             &trace,
             &recal_waypoints(),
             BoundaryKind::Section,
             10,
             10.0,
-            DEFAULT_BASE_PACE_S_PER_KM,
-            K_FATIGUE,
-            0,
-            &WeatherLookup::empty(),
+            &default_opts(),
         )
         .unwrap();
         assert!((result.calibration_factor - CALIBRATION_MIN).abs() < 1e-9);

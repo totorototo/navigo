@@ -1,4 +1,4 @@
-use crate::pace_model::{WeatherConditions, WeatherLookup};
+use crate::pace_model::{AnalysisOptions, WeatherConditions, WeatherLookup};
 
 // ── Options for analyzeGpx / Trace::analyze / Trace::recalibrate ─────────────
 
@@ -18,20 +18,19 @@ fn weather_lookup_from(entries: &[WasmWeatherEntry]) -> WeatherLookup {
     if entries.is_empty() {
         return WeatherLookup::empty();
     }
-    let (names, values) = entries
-        .iter()
-        .map(|w| {
-            (
-                w.name.clone(),
-                WeatherConditions {
-                    temperature_c: w.temperature_c,
-                    humidity_pct: w.humidity_pct,
-                    wind_kmh: w.wind_kmh,
-                    precip_prob_pct: w.precip_prob_pct,
-                },
-            )
-        })
-        .unzip();
+
+    let mut names = Vec::with_capacity(entries.len());
+    let mut values = Vec::with_capacity(entries.len());
+    for w in entries {
+        names.push(w.name.clone());
+        values.push(WeatherConditions {
+            temperature_c: w.temperature_c,
+            humidity_pct: w.humidity_pct,
+            wind_kmh: w.wind_kmh,
+            precip_prob_pct: w.precip_prob_pct,
+        });
+    }
+
     WeatherLookup::new(names, values)
 }
 
@@ -46,20 +45,13 @@ pub(crate) struct WasmAnalyzeOptions {
 }
 
 impl WasmAnalyzeOptions {
-    pub(crate) fn base_pace_s_per_km(&self) -> f64 {
-        self.base_pace_s_per_km
-    }
-
-    pub(crate) fn k_fatigue(&self) -> f64 {
-        self.k_fatigue
-    }
-
-    pub(crate) fn life_base_stop_s(&self) -> u32 {
-        self.life_base_stop_s
-    }
-
-    pub(crate) fn weather_lookup(&self) -> WeatherLookup {
-        weather_lookup_from(&self.weather)
+    pub(crate) fn to_analysis_options(&self) -> AnalysisOptions {
+        AnalysisOptions {
+            base_pace_s_per_km: self.base_pace_s_per_km,
+            k_fatigue: self.k_fatigue,
+            life_base_stop_s: self.life_base_stop_s,
+            weather: weather_lookup_from(&self.weather),
+        }
     }
 }
 
@@ -78,18 +70,6 @@ pub(crate) struct WasmRecalibrateOptions {
 }
 
 impl WasmRecalibrateOptions {
-    pub(crate) fn base_pace_s_per_km(&self) -> f64 {
-        self.base_pace_s_per_km
-    }
-
-    pub(crate) fn k_fatigue(&self) -> f64 {
-        self.k_fatigue
-    }
-
-    pub(crate) fn life_base_stop_s(&self) -> u32 {
-        self.life_base_stop_s
-    }
-
     pub(crate) fn current_index(&self) -> usize {
         self.current_index as usize
     }
@@ -98,8 +78,13 @@ impl WasmRecalibrateOptions {
         self.actual_elapsed_s
     }
 
-    pub(crate) fn weather_lookup(&self) -> WeatherLookup {
-        weather_lookup_from(&self.weather)
+    pub(crate) fn to_analysis_options(&self) -> AnalysisOptions {
+        AnalysisOptions {
+            base_pace_s_per_km: self.base_pace_s_per_km,
+            k_fatigue: self.k_fatigue,
+            life_base_stop_s: self.life_base_stop_s,
+            weather: weather_lookup_from(&self.weather),
+        }
     }
 }
 
@@ -145,7 +130,7 @@ mod tests {
             life_base_stop_s: 3600,
             weather: Vec::new(),
         };
-        assert!((options.weather_lookup().factor_for("anything") - 1.0).abs() < 1e-9);
+        assert!((options.to_analysis_options().weather.factor_for("anything") - 1.0).abs() < 1e-9);
     }
 
     #[test]
@@ -162,7 +147,7 @@ mod tests {
                 precip_prob_pct: 80.0,
             }],
         };
-        let lookup = options.weather_lookup();
+        let lookup = &options.to_analysis_options().weather;
         assert!(lookup.factor_for("Chamonix") > 1.0);
         assert!((lookup.factor_for("Unknown") - 1.0).abs() < 1e-9);
     }

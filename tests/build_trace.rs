@@ -15,7 +15,7 @@ fn should_build_trace() {
     let locations = vec![paris, moscow];
     let trace = build_trace(&locations).unwrap();
 
-    assert!(!trace.locations.is_empty());
+    assert!(!trace.locations().is_empty());
     assert!((trace.length() - 2486.340992526076).abs() < 1e-6);
 }
 

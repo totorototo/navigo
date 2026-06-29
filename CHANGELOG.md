@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (Rust):** `Trace` fields are now `pub(crate)` — access via public
+  accessor methods (`locations()`, `cumulative_distances()`, `slopes()`,
+  `peaks()`, `valleys()`, `climbs()`, `total_distance()`,
+  `total_elevation_gain()`, `total_elevation_loss()`, `area()`, `elevation()`).
+- **Breaking (Rust):** `trace.area()` returns `&Area` (was owned `Area`);
+  `trace.elevation()` returns `&Elevation`.
+- **Breaking (Rust):** `trace.get_section()` returns `Result<&[Location], _>`
+  (was `Result<Vec<Location>, _>`).
+- **Breaking (Rust):** `section::compute_from_waypoints` and
+  `stage::compute_from_waypoints` now take `&AnalysisOptions` instead of
+  separate `base_pace`, `k_fatigue`, `life_base_stop_s`, `&WeatherLookup`
+  parameters.
+- **Breaking (Rust):** `calibration::recalibrate_from_current` takes
+  `&AnalysisOptions` as last param (was 4 separate args).
+- **Breaking (Rust):** `segment::compute` takes `&SegmentParams` +
+  `&mut SegmentState` instead of 6 loose parameters.
+- **Breaking (WASM):** Array getters on `Trace` are now explicit methods
+  (`getLocationsFlat()`, `getCumulativeDistances()`, `getSlopes()`, etc.)
+  instead of property-style getters.
+- **Breaking (WASM):** `parseGpx` now only parses `<trkpt>` (lean path);
+  use `parseWaypoints`/`parseMetadata` separately, or `analyzeGpx` for the
+  full analysis.
+
+### Added
+
+- **`AnalysisOptions`** builder struct: `AnalysisOptions::default().base_pace(500.0).fatigue(0.002).life_base_stop(3600)`.
+- **`SegmentParams` / `SegmentState`** structs for the segment computation loop.
+- **`interval` module** (crate-internal): shared template for section/stage
+  computation — eliminates ~280 lines of duplicated code.
+- **WASM `parseWaypoints(bytes)`**: parse only `<wpt>` elements.
+- **WASM `parseMetadata(bytes)`**: parse only the `<metadata>` block.
+- **WASM console warnings**: `from_value`/`to_value` errors now log to
+  `console.warn` instead of silently returning `null`.
+- **Integration tests** (`tests/integration.rs`): 22 tests covering GPX
+  parsing, trace construction, race analysis, calibration, edge cases, and
+  the real GPX fixture end-to-end.
+- Module-level `//!` documentation on `location.rs`, `error.rs`, `leg.rs`.
+
+### Performance
+
+- `minetti::cmet`: Horner's method polynomial via `mul_add` chain.
+- `minetti::pace_factor`: multiply by precomputed `INV_CMET_FLAT` instead of dividing.
+- `gpx::parse_trace_points` / `parse_all`: `Vec::with_capacity(bytes.len() / 100)`.
+- `trace.rs`: single-pass cumulative gain/loss mapping with `with_capacity`.
+- `elevation.rs`: `copy_from_slice` on pre-extracted `alt_cache` in median smoother.
+- `extrema.rs`: `.into()` instead of `.to_vec()` when prominence ≤ 0.
+
+## [0.7.0] - 2026-06-28
+
+### Changed
+
+- **Breaking (WASM):** All JS-facing property and method names are now camelCase.
+
+## [0.6.1] - 2026-06-28
+
+### Changed
+
+- JS property names camelCased (non-breaking re-release of 0.6.0 fixes).
+
+## [0.6.0] - 2026-06-27
+
+### Added
+
+- **WASM `Trace::recalibrate(options)`**: live ETA recalibration via the
+  calibration module, exposed as a method on the JS `Trace` class.
+
 ## [0.5.0] - 2026-06-27
 
 ### Changed
@@ -131,7 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Garmin-style climb segment detection.
 - CI pipeline (build, clippy, fmt, tests) and crates.io publish workflow.
 
-[Unreleased]: https://github.com/totorototo/navigo/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/totorototo/navigo/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/totorototo/navigo/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/totorototo/navigo/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/totorototo/navigo/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/totorototo/navigo/compare/v0.4.4...v0.5.0
 [0.4.0]: https://github.com/totorototo/navigo/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/totorototo/navigo/compare/v0.3.0...v0.3.1

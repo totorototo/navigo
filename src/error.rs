@@ -1,3 +1,5 @@
+//! Error types for fallible trace operations.
+
 use std::error::Error;
 use std::fmt;
 
