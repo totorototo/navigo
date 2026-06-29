@@ -21,11 +21,7 @@ import { parseGpx, analyzeGpx, buildTrace } from "@totorototo/navigo";
 ## Usage (plain browser ESM)
 
 ```js
-import init, {
-  parseGpx,
-  analyzeGpx,
-  buildTrace,
-} from "@totorototo/navigo/web";
+import init, { parseGpx, analyzeGpx, buildTrace } from "@totorototo/navigo/web";
 await init();
 ```
 
@@ -95,12 +91,12 @@ const result = analyzeGpx(bytes, {
 
 **`options`**
 
-| Field            | Type                  | Description                                             |
-| ---------------- | --------------------- | -------------------------------------------------------- |
-| `basePaceSPerKm`  | `number`              | Flat-terrain pace in s/km (e.g. `500` = 8:20/km)         |
-| `kFatigue`        | `number`              | Exponential fatigue coefficient (e.g. `0.002`)           |
-| `lifeBaseStopS`   | `number`              | Default planned stop at LifeBase checkpoints (seconds)   |
-| `weather`         | `WeatherEntry[]`      | Optional. Per-checkpoint forecast (see below)            |
+| Field            | Type             | Description                                            |
+| ---------------- | ---------------- | ------------------------------------------------------ |
+| `basePaceSPerKm` | `number`         | Flat-terrain pace in s/km (e.g. `500` = 8:20/km)       |
+| `kFatigue`       | `number`         | Exponential fatigue coefficient (e.g. `0.002`)         |
+| `lifeBaseStopS`  | `number`         | Default planned stop at LifeBase checkpoints (seconds) |
+| `weather`        | `WeatherEntry[]` | Optional. Per-checkpoint forecast (see below)          |
 
 **`WeatherEntry`** — matched against waypoint `name`; unmatched checkpoints use
 neutral weather (no slowdown):
@@ -116,7 +112,13 @@ const result = analyzeGpx(bytes, {
   kFatigue: 0.002,
   lifeBaseStopS: 3600,
   weather: [
-    { name: "Chamonix", temperatureC: 32, humidityPct: 85, windKmh: 35, precipProbPct: 80 },
+    {
+      name: "Chamonix",
+      temperatureC: 32,
+      humidityPct: 85,
+      windKmh: 35,
+      precipProbPct: 80,
+    },
   ],
 });
 ```
@@ -185,19 +187,19 @@ Always call `.free()` when done, or use a `FinalizationRegistry`.
 
 ### Properties (getters — copy WASM → JS heap; call once and cache)
 
-| Property                       | Type           | Description                             |
-| ------------------------------ | -------------- | --------------------------------------- |
-| `totalDistance`                | `number`       | Total distance (km)                     |
-| `totalElevationGain`           | `number`       | Cumulative elevation gain (m)           |
-| `totalElevationLoss`           | `number`       | Cumulative elevation loss (m)           |
-| `locationCount`                | `number`       | Number of (D-P simplified) locations    |
-| `locationsFlat`                | `Float64Array` | `[lon, lat, alt, …]` for every location |
-| `cumulativeDistances`          | `Float64Array` | Distance at each location (km)          |
-| `cumulativeElevationGains`     | `Float64Array` | Cumulative gain at each location (m)    |
-| `cumulativeElevationLosses`    | `Float64Array` | Cumulative loss at each location (m)    |
-| `slopes`                       | `Float64Array` | Slope between consecutive locations (%) |
-| `peaks`                        | `Uint32Array`  | Peak location indices                   |
-| `valleys`                      | `Uint32Array`  | Valley location indices                 |
+| Property                    | Type           | Description                             |
+| --------------------------- | -------------- | --------------------------------------- |
+| `totalDistance`             | `number`       | Total distance (km)                     |
+| `totalElevationGain`        | `number`       | Cumulative elevation gain (m)           |
+| `totalElevationLoss`        | `number`       | Cumulative elevation loss (m)           |
+| `locationCount`             | `number`       | Number of (D-P simplified) locations    |
+| `locationsFlat`             | `Float64Array` | `[lon, lat, alt, …]` for every location |
+| `cumulativeDistances`       | `Float64Array` | Distance at each location (km)          |
+| `cumulativeElevationGains`  | `Float64Array` | Cumulative gain at each location (m)    |
+| `cumulativeElevationLosses` | `Float64Array` | Cumulative loss at each location (m)    |
+| `slopes`                    | `Float64Array` | Slope between consecutive locations (%) |
+| `peaks`                     | `Uint32Array`  | Peak location indices                   |
+| `valleys`                   | `Uint32Array`  | Valley location indices                 |
 
 ### Methods
 
@@ -284,10 +286,10 @@ waypoints (e.g. a `Trace` with no GPX-sourced waypoints).
 **`options`** — same `basePaceSPerKm` / `kFatigue` / `lifeBaseStopS` /
 `weather` as [`analyze`](#options) above, plus:
 
-| Field            | Type     | Description                                          |
-| ---------------- | -------- | ----------------------------------------------------- |
+| Field            | Type     | Description                                                   |
+| ---------------- | -------- | ------------------------------------------------------------- |
 | `currentIndex`   | `number` | Runner's current trace index (e.g. from `find_closest_point`) |
-| `actualElapsedS` | `number` | Real seconds elapsed since race start                |
+| `actualElapsedS` | `number` | Real seconds elapsed since race start                         |
 
 **`RecalibratedEtas`**
 

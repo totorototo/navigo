@@ -248,12 +248,12 @@ let factor = weather.factor_for("La Mongie"); // combined thermal + wind + preci
 
 Useful constants:
 
-| Constant | Value | Meaning |
-|---|---|---|
-| `K_FATIGUE` | `0.002` | Default fatigue coefficient |
-| `DEFAULT_BASE_PACE_S_PER_KM` | `500.0` | 8:20/km flat pace |
-| `DEFAULT_LIFE_BASE_STOP_S` | `3600` | Default LifeBase stop (1 h) |
-| `RECOVERY_LIFE_BASE` | `0.20` | 20 % effort reset at LifeBase |
+| Constant                     | Value   | Meaning                       |
+| ---------------------------- | ------- | ----------------------------- |
+| `K_FATIGUE`                  | `0.002` | Default fatigue coefficient   |
+| `DEFAULT_BASE_PACE_S_PER_KM` | `500.0` | 8:20/km flat pace             |
+| `DEFAULT_LIFE_BASE_STOP_S`   | `3600`  | Default LifeBase stop (1 h)   |
+| `RECOVERY_LIFE_BASE`         | `0.20`  | 20 % effort reset at LifeBase |
 
 ---
 
