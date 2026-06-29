@@ -487,20 +487,22 @@ trace.climbs();
 trace.free();
 ```
 
-**From a GPX file (`parseGpx` / `trace.analyze()` / `analyzeGpx`)**
+**From a GPX file (`parseGpxAll` / `trace.analyze()` / `analyzeGpx`)**
 
 ```js
-import init, { parseGpx, analyzeGpx } from "./navigo.js";
+import init, { parseGpxAll, analyzeGpx } from "./navigo.js";
 await init();
 
 const bytes = new Uint8Array(
   await fetch("/route.gpx").then((r) => r.arrayBuffer()),
 );
 
-// Parse once — track-points, waypoints and metadata are all stored on the
-// returned Trace, so nothing needs to be re-sent for the steps below.
-const trace = parseGpx(bytes);
-// → Trace | null  (same getters/methods as buildTrace, plus .analyze())
+// parseGpxAll triple-scans bytes once for track-points + waypoints +
+// metadata, so nothing needs to be re-sent for the steps below. If you don't
+// need .analyze()/.recalibrate(), use the leaner parseGpx instead — it skips
+// waypoints and metadata.
+const trace = parseGpxAll(bytes);
+// → Trace | null  (same getters/methods as buildTrace, plus .analyze()/.recalibrate())
 
 const options = { basePaceSPerKm: 500, kFatigue: 0.002, lifeBaseStopS: 3600 };
 

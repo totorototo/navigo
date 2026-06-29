@@ -36,12 +36,28 @@ waypoints and metadata are intentionally skipped so this path stays lean.
 Returns `null` when the file contains no valid track-points.
 
 Call `parseWaypoints(bytes)` and/or `parseMetadata(bytes)` separately when you
-need that data. If you need the full race analysis in one shot, use
+need that data, or use `parseGpxAll(bytes)` to get a `Trace` with both
+already attached. If you need the full race analysis in one shot, use
 `analyzeGpx(bytes, options)` instead.
 
 ```js
 const bytes = new Uint8Array(await file.arrayBuffer());
 const trace = parseGpx(bytes);
+```
+
+### `parseGpxAll(bytes: Uint8Array): Trace | null`
+
+Parse a GPX file into a `Trace` that also carries its waypoints and
+metadata — use this when you'll call `.analyze()` or `.recalibrate()` on the
+returned handle, since those read the trace's stored waypoints (plain
+`parseGpx` always returns an empty waypoint list). Triple-scans `bytes`
+once up front instead of `parseGpx`'s single scan; the cost is paid once,
+not on every `.recalibrate()` call. Returns `null` when the file contains
+no valid track-points.
+
+```js
+const bytes = new Uint8Array(await file.arrayBuffer());
+const trace = parseGpxAll(bytes);
 ```
 
 ### `parseWaypoints(bytes: Uint8Array): Waypoint[]`
@@ -57,13 +73,15 @@ Parse only the `<metadata>` block from raw GPX bytes. Returns an object with
 ### `trace.analyze(options): object | null`
 
 Method on `Trace`. Compute the race analysis (waypoints, legs, sections,
-stages) using this trace's waypoints (parsed once by `parseGpx`). Pure
+stages) using this trace's waypoints — requires a `Trace` from `parseGpxAll`
+(or `analyzeGpx`'s internal full parse); plain `parseGpx` traces have no
+waypoints, so this returns empty `legs` and `null` `sections`/`stages`. Pure
 opaque-handle-in, JSON-out — no bytes cross the boundary again, and the
 expensive trace computation (simplification, elevation, climbs) is never
 repeated. Returns `null` on malformed `options`.
 
 ```js
-const trace = parseGpx(bytes);
+const trace = parseGpxAll(bytes);
 const analysis = trace.analyze({
   basePaceSPerKm: 500,
   kFatigue: 0.002,
@@ -78,15 +96,16 @@ trace.free();
 ```
 
 See **`options`** below for the full shape (including optional `weather`).
-A `Trace` built via `buildTrace` (no GPX source) has no waypoints, so
-`.analyze()` on it returns an empty `legs` and `null` `sections`/`stages`.
+A `Trace` built via `buildTrace` (no GPX source) or plain `parseGpx` has no
+waypoints, so `.analyze()` on either returns an empty `legs` and `null`
+`sections`/`stages`.
 
 ### `analyzeGpx(bytes, options): object | null`
 
-Convenience wrapper around `parseGpx` + `trace.analyze()` for callers who
+Convenience wrapper around `parseGpxAll` + `trace.analyze()` for callers who
 just want the JSON result and don't need the `Trace` handle (so there's
-no `.free()` to manage). If you already have a `Trace`, call
-`.analyze()` on it directly instead of parsing the bytes twice. Returns
+no `.free()` to manage). If you already have a `Trace` from `parseGpxAll`,
+call `.analyze()` on it directly instead of parsing the bytes twice. Returns
 `null` on empty input or malformed `options`, or the following object:
 
 ```js
@@ -281,6 +300,10 @@ against what the model predicted for the distance covered to solve a
 calibration factor, then re-predicts remaining sections/stages with the
 pace re-anchored to it and the circadian clock re-seeded to real elapsed
 time. Returns `null` on malformed `options`.
+
+Needs this trace's waypoints to know section/stage boundaries — build the
+`Trace` with `parseGpxAll`, not plain `parseGpx` (which always returns an
+empty waypoint list, so `sections`/`stages` would come back `null`).
 
 ```js
 const currentIndex = trace.findClosestPoint(lon, lat, alt)?.index;

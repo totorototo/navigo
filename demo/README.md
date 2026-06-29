@@ -69,15 +69,12 @@ demo/pkg/navigo.js + navigo_bg.wasm
         │
 fetch(`/${selectedRaceFile}`) → Uint8Array
         │
-parseGpx(bytes)   ← one copy JS → WASM; track-points, waypoints
-        │           and metadata all parsed once
-   trace: Trace (lives in WASM memory)
+        ├── parseGpx(bytes)   ← lean: only <trkpt> track-points
+        │     trace: Trace (lives in WASM memory)
+        │     trace.totalDistance, .climbs(), …  → free/cheap
         │
-   ┌────┴──────────────────────────────────────────────┐
-   │  trace.total_distance, .climbs(), …  → free/cheap │
-   │  trace.analyze(options)              → legs/      │
-   │    sections/stages/waypoints, no bytes re-sent     │
-   └─────────────────────────────────────────────────────┘
+        └── analyzeGpx(bytes, options)   ← separate triple-scan pass:
+              track-points + waypoints + metadata → legs/sections/stages
         │
    stats / canvas / climbs / checkpoints / sections / stages
         │

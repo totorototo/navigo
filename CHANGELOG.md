@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   computation — eliminates ~280 lines of duplicated code.
 - **WASM `parseWaypoints(bytes)`**: parse only `<wpt>` elements.
 - **WASM `parseMetadata(bytes)`**: parse only the `<metadata>` block.
+- **WASM `parseGpxAll(bytes)`**: parses track-points, waypoints and metadata
+  in one call and returns a `Trace` ready for `.analyze()` / `.recalibrate()`
+  — fills the gap left by `parseGpx` going lean (it only loads track-points,
+  so its `Trace` has no waypoints for those two methods to use).
 - **WASM console warnings**: `from_value`/`to_value` errors now log to
   `console.warn` instead of silently returning `null`.
 - **Integration tests** (`tests/integration.rs`): 22 tests covering GPX

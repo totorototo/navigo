@@ -35,7 +35,8 @@ fn warn(msg: &str) {
 /// metadata are intentionally ignored so this path stays as lean as possible.
 ///
 /// Call [`parseWaypoints`] and/or [`parseMetadata`] separately when you need
-/// that data.  If you need the full race analysis in one shot, use
+/// that data, or use [`parseGpxAll`] to get a `Trace` with both
+/// already attached. If you need the full race analysis in one shot, use
 /// [`analyzeGpx`] instead.
 ///
 /// Returns `null` when the GPX contains no valid track-points.
@@ -51,6 +52,19 @@ pub fn parse_gpx(bytes: &[u8]) -> Option<Trace> {
             description: None,
         },
     ))
+}
+
+/// Parse a GPX file into a `Trace` that also carries its waypoints and
+/// metadata, so `.analyze()` / `.recalibrate()` work directly on the
+/// returned handle — no separate [`parseWaypoints`] call or extra setup
+/// needed. Slower than the lean [`parseGpx`] (triple-scans `bytes` instead
+/// of once for track-points only); use this when you'll call `.recalibrate()`
+/// repeatedly over the trace's lifetime, since the scan only happens once.
+///
+/// Returns `null` when the GPX contains no valid track-points.
+#[wasm_bindgen(js_name = "parseGpxAll")]
+pub fn parse_gpx_all(bytes: &[u8]) -> Option<Trace> {
+    parse_wasm_trace(bytes)
 }
 
 /// Parse only the `<wpt>` waypoints from raw GPX bytes.
@@ -88,10 +102,10 @@ pub fn parse_metadata_js(bytes: &[u8]) -> JsValue {
 /// each, then runs the full pipeline.
 ///
 /// If you only need raw GPS data (elevation profile, distances, peaks…) use
-/// [`parseGpx`] instead — it skips waypoints and metadata entirely.
-/// If you already hold a `Trace` from `parseGpx`, you can pass waypoints
-/// obtained from [`parseWaypoints`] to the server-side analysis instead of
-/// calling this function and re-parsing the bytes.
+/// [`parseGpx`] instead — it skips waypoints and metadata entirely. If you
+/// already hold a `Trace` and want to add waypoints to it, re-parse via
+/// [`parseGpxAll`] rather than calling this function (which
+/// discards the `Trace` handle, returning only JSON).
 ///
 /// `options` — a JS object: `{ basePaceSPerKm, kFatigue, lifeBaseStopS, weather? }`.
 /// `weather` is an optional array of
@@ -150,9 +164,8 @@ pub fn build_trace(flat: &[f64]) -> Option<Trace> {
 /// Parse GPX `bytes` into a `Trace` that carries **all three** — track-points,
 /// waypoints and metadata — in a single (triple-scan) pass.
 ///
-/// Used only internally by `analyzeGpx`, where waypoints are required for the
-/// legs/sections/stages pipeline. Public consumers who need waypoints
-/// separately should call `parse_waypoints_js` / `parse_metadata_js`.
+/// Shared by `analyzeGpx` and the public `parseGpxAll`, both of
+/// which need waypoints for the legs/sections/stages pipeline.
 fn parse_wasm_trace(bytes: &[u8]) -> Option<Trace> {
     let parsed = crate::gpx::parse_all(bytes);
     let inner = core_build_trace(&parsed.locations).ok()?;
@@ -235,6 +248,14 @@ mod pipeline_tests {
         // parseGpx is the lean path — waypoints and metadata are NOT loaded.
         assert!(trace.waypoints().is_empty());
         assert!(trace.metadata().name.is_none());
+    }
+
+    #[test]
+    fn parse_gpx_all_loads_waypoints() {
+        let trace = parse_gpx_all(SAMPLE_GPX).expect("sample GPX should parse");
+        assert_eq!(trace.inner().locations.len(), 5);
+        assert_eq!(trace.waypoints().len(), 3);
+        assert_eq!(trace.waypoints()[0].name, "Start");
     }
 
     #[test]

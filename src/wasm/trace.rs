@@ -213,7 +213,9 @@ impl Trace {
     }
 
     /// Compute the race analysis (waypoints, legs, sections, stages) using
-    /// this trace's waypoints (parsed once by `parseGpx`). Pure
+    /// this trace's waypoints — empty unless this `Trace` came from
+    /// [`parseGpxAll`] or `analyzeGpx`'s internal full-parse path
+    /// (plain [`parseGpx`] skips waypoints to stay lean). Pure
     /// opaque-handle-in, JSON-out — no bytes cross the boundary again, and
     /// the expensive trace computation (simplification, elevation, climbs)
     /// is never repeated.
@@ -232,6 +234,10 @@ impl Trace {
 
     /// Live, mid-race ETA recalibration — corrects the static `.analyze()`
     /// prediction against the runner's actual progress so far.
+    ///
+    /// Needs this trace's waypoints to know section/stage boundaries — build
+    /// the `Trace` with [`parseGpxAll`] (plain [`parseGpx`] skips waypoints
+    /// to stay lean, so `sections`/`stages` would always come back `null`).
     ///
     /// `options` — a JS object: `{ basePaceSPerKm, kFatigue, lifeBaseStopS,
     /// currentIndex, actualElapsedS, weather? }`. `currentIndex` is the
