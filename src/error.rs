@@ -36,3 +36,34 @@ impl fmt::Display for TraceError {
 }
 
 impl Error for TraceError {}
+
+#[cfg(test)]
+mod tests {
+    use super::TraceError;
+
+    #[test]
+    fn display_empty_trace() {
+        assert_eq!(TraceError::EmptyTrace.to_string(), "trace has no locations");
+    }
+
+    #[test]
+    fn display_invalid_range() {
+        let err = TraceError::InvalidRange {
+            start_index: 5,
+            end_index: 3,
+        };
+        assert_eq!(
+            err.to_string(),
+            "start_index (5) must be smaller than end_index (3)"
+        );
+    }
+
+    #[test]
+    fn display_index_out_of_bounds() {
+        let err = TraceError::IndexOutOfBounds { index: 10, len: 4 };
+        assert_eq!(
+            err.to_string(),
+            "index 10 out of bounds for trace of length 4"
+        );
+    }
+}

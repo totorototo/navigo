@@ -343,4 +343,33 @@ mod tests {
         assert!(lookup.factor_for("Chamonix") > 1.0);
         assert!((lookup.factor_for("Unknown") - 1.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn analysis_options_new_equals_default() {
+        let a = AnalysisOptions::new();
+        let b = AnalysisOptions::default();
+        assert!((a.base_pace_s_per_km - b.base_pace_s_per_km).abs() < 1e-9);
+        assert!((a.k_fatigue - b.k_fatigue).abs() < 1e-9);
+        assert_eq!(a.life_base_stop_s, b.life_base_stop_s);
+    }
+
+    #[test]
+    fn analysis_options_builder_chain() {
+        let hot = WeatherConditions {
+            temperature_c: 30.0,
+            humidity_pct: 80.0,
+            wind_kmh: 20.0,
+            precip_prob_pct: 50.0,
+        };
+        let lookup = WeatherLookup::new(vec!["CP1".into()], vec![hot]);
+        let opts = AnalysisOptions::new()
+            .base_pace(450.0)
+            .fatigue(0.003)
+            .life_base_stop(1200)
+            .weather(lookup);
+        assert!((opts.base_pace_s_per_km - 450.0).abs() < 1e-9);
+        assert!((opts.k_fatigue - 0.003).abs() < 1e-9);
+        assert_eq!(opts.life_base_stop_s, 1200);
+        assert!(opts.weather.factor_for("CP1") > 1.0);
+    }
 }

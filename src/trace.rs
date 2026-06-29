@@ -572,4 +572,38 @@ mod tests {
             Err(TraceError::IndexOutOfBounds { index: len, len })
         );
     }
+
+    #[test]
+    fn find_closest_point_from_out_of_bounds_returns_none() {
+        let locations = helper::get_locations();
+        let trace = Trace::new(&locations).unwrap();
+        let target = trace.locations[0];
+        assert!(trace
+            .find_closest_point_from(&target, trace.locations.len())
+            .is_none());
+    }
+
+    #[test]
+    fn public_accessors_match_internal_values() {
+        let locations = helper::get_locations();
+        let trace = Trace::new(&locations).unwrap();
+
+        assert_eq!(trace.locations(), &trace.locations);
+        assert_eq!(trace.cumulative_distances(), &trace.cumulative_distances);
+        assert_eq!(
+            trace.cumulative_elevation_gains(),
+            &trace.cumulative_elevation_gains
+        );
+        assert_eq!(
+            trace.cumulative_elevation_losses(),
+            &trace.cumulative_elevation_losses
+        );
+        assert_eq!(trace.slopes(), &trace.slopes);
+        assert_eq!(trace.peaks(), &trace.peaks);
+        assert_eq!(trace.valleys(), &trace.valleys);
+        assert_eq!(trace.climbs(), &trace.climbs);
+        assert_eq!(trace.total_distance(), trace.total_distance);
+        assert_eq!(trace.total_elevation_gain(), trace.total_elevation_gain);
+        assert_eq!(trace.total_elevation_loss(), trace.total_elevation_loss);
+    }
 }

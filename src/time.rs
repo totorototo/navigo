@@ -146,4 +146,40 @@ mod tests {
             1709164800
         );
     }
+
+    #[test]
+    fn invalid_number_in_date_or_time() {
+        assert_eq!(
+            parse_iso8601_to_epoch("202a-11-20T12:00:00Z"),
+            Err(TimeParseError::InvalidNumber)
+        );
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-2aT12:00:00Z"),
+            Err(TimeParseError::InvalidNumber)
+        );
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:0a:00Z"),
+            Err(TimeParseError::InvalidNumber)
+        );
+    }
+
+    #[test]
+    fn invalid_timezone_shapes() {
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:00:00X01:00"),
+            Err(TimeParseError::InvalidTimezone)
+        );
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:00:00+0100"),
+            Err(TimeParseError::InvalidTimezone)
+        );
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:00:00+ab:00"),
+            Err(TimeParseError::InvalidNumber)
+        );
+        assert_eq!(
+            parse_iso8601_to_epoch("2025-11-20T12:00:00+01:a0"),
+            Err(TimeParseError::InvalidNumber)
+        );
+    }
 }

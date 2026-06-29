@@ -201,3 +201,277 @@ pub(crate) fn compute_intervals(
 
     Some(results)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::location::Location;
+    use crate::pace_model::AnalysisOptions;
+
+    fn make_trace(locs: &[Location]) -> Trace {
+        Trace::new(locs).unwrap()
+    }
+
+    fn flat_locs(n: usize) -> Vec<Location> {
+        (0..n)
+            .map(|i| Location {
+                longitude: 0.0,
+                latitude: i as f64 * 0.001,
+                altitude: 100.0,
+            })
+            .collect()
+    }
+
+    fn make_waypoint(
+        lat: f64,
+        name: &str,
+        wpt_type: Option<&str>,
+        time: Option<i64>,
+        stop_duration: Option<u32>,
+    ) -> Waypoint {
+        Waypoint {
+            latitude: lat,
+            longitude: 0.0,
+            elevation: None,
+            name: name.to_string(),
+            description: None,
+            comment: None,
+            symbol: None,
+            wpt_type: wpt_type.map(String::from),
+            time,
+            stop_duration,
+        }
+    }
+
+    #[test]
+    fn returns_none_with_fewer_than_two_boundaries() {
+        let trace = make_trace(&flat_locs(5));
+        let wpts = vec![make_waypoint(0.0, "Start", Some("Start"), None, None)];
+        assert!(compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn returns_none_with_empty_waypoints() {
+        let trace = make_trace(&flat_locs(5));
+        let wpts: Vec<Waypoint> = vec![];
+        assert!(compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn basic_interval_has_positive_metrics() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals.len(), 1);
+        assert!(intervals[0].total_distance_km > 0.0);
+        assert!(intervals[0].estimated_duration_s > 0.0);
+        assert_eq!(intervals[0].id, 0);
+        assert_eq!(intervals[0].start_location, "Start");
+        assert_eq!(intervals[0].end_location, "End");
+    }
+
+    #[test]
+    fn stop_duration_from_waypoint() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("TimeBarrier"), None, Some(600)),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals[0].stop_duration, Some(600));
+        // Duration includes the 600s stop
+        assert!(intervals[0].estimated_duration_s > 600.0);
+    }
+
+    #[test]
+    fn life_base_stop_from_options() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("LifeBase"), None, None),
+        ];
+        let opts = AnalysisOptions::default().life_base_stop(1800);
+        let intervals =
+            compute_intervals(&trace, &wpts, &opts, Waypoint::is_section_boundary, false).unwrap();
+        // Duration includes the 1800s default life base stop
+        assert!(intervals[0].estimated_duration_s > 1800.0);
+    }
+
+    #[test]
+    fn max_completion_time_computed_from_timestamps() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), Some(1000), None),
+            make_waypoint(0.009, "End", Some("Arrival"), Some(5000), None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals[0].max_completion_time, Some(4000));
+        assert!(intervals[0].cutoff_ratio.is_some());
+    }
+
+    #[test]
+    fn zero_max_completion_time_yields_none_cutoff() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), Some(1000), None),
+            make_waypoint(0.009, "End", Some("Arrival"), Some(1000), None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals[0].max_completion_time, Some(0));
+        assert!(intervals[0].cutoff_ratio.is_none());
+    }
+
+    #[test]
+    fn stage_idx_tracking_enabled() {
+        let trace = make_trace(&flat_locs(15));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.004, "TB", Some("TimeBarrier"), None, None),
+            make_waypoint(0.008, "LB", Some("LifeBase"), None, None),
+            make_waypoint(0.012, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default().life_base_stop(0),
+            Waypoint::is_section_boundary,
+            true,
+        )
+        .unwrap();
+        assert_eq!(intervals.len(), 3);
+        assert_eq!(intervals[0].stage_idx, 0);
+        assert_eq!(intervals[1].stage_idx, 0);
+        assert_eq!(intervals[2].stage_idx, 1);
+    }
+
+    #[test]
+    fn stage_idx_tracking_disabled() {
+        let trace = make_trace(&flat_locs(15));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.008, "LB", Some("LifeBase"), None, None),
+            make_waypoint(0.012, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default().life_base_stop(0),
+            Waypoint::is_stage_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals.len(), 2);
+        // Without tracking, all stage_idx remain 0
+        assert_eq!(intervals[0].stage_idx, 0);
+        assert_eq!(intervals[1].stage_idx, 0);
+    }
+
+    #[test]
+    fn difficulty_level_one_on_flat() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert_eq!(intervals[0].difficulty, 1);
+    }
+
+    #[test]
+    fn difficulty_increases_with_slope() {
+        // Steep uphill: should produce higher difficulty
+        let locs: Vec<Location> = (0..10)
+            .map(|i| Location {
+                longitude: 0.0,
+                latitude: i as f64 * 0.001,
+                altitude: i as f64 * 80.0, // Very steep
+            })
+            .collect();
+        let trace = make_trace(&locs);
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        assert!(intervals[0].difficulty > 1);
+        assert!(intervals[0].pace_factor > 1.1);
+    }
+
+    #[test]
+    fn bearing_is_computed() {
+        let trace = make_trace(&flat_locs(10));
+        let wpts = vec![
+            make_waypoint(0.0, "Start", Some("Start"), None, None),
+            make_waypoint(0.009, "End", Some("Arrival"), None, None),
+        ];
+        let intervals = compute_intervals(
+            &trace,
+            &wpts,
+            &AnalysisOptions::default(),
+            Waypoint::is_section_boundary,
+            false,
+        )
+        .unwrap();
+        // Northbound trace → bearing should be ~0 degrees (north)
+        assert!(intervals[0].bearing.abs() < 1.0 || (intervals[0].bearing - 360.0).abs() < 1.0);
+    }
+}

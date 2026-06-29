@@ -779,4 +779,65 @@ mod tests {
         assert_eq!(parsed.locations.len(), 1);
         assert!(parsed.waypoints.is_empty());
     }
+
+    #[test]
+    fn parse_waypoints_name_close_tag_outside_element_yields_empty_name() {
+        let gpx = br#"<gpx>
+  <wpt lat="45.0" lon="7.0"><name>Broken</wpt>
+  <name>Outside close</name>
+</gpx>"#;
+        let waypoints = parse_waypoints(gpx);
+        assert_eq!(waypoints.len(), 1);
+        assert_eq!(waypoints[0].name, "");
+    }
+
+    #[test]
+    fn parse_waypoints_skips_unclosed_attribute_quote() {
+        let gpx = br#"<gpx>
+  <wpt lat='45.0 lon="7.0"><name>Bad</name></wpt>
+  <wpt lat="45.1" lon="7.1"><name>Good</name></wpt>
+</gpx>"#;
+        let waypoints = parse_waypoints(gpx);
+        assert_eq!(waypoints.len(), 1);
+        assert_eq!(waypoints[0].name, "Good");
+    }
+
+    #[test]
+    fn parse_all_falls_back_to_root_name_and_desc_without_metadata_block() {
+        let gpx = br#"<gpx>
+  <name>Root title</name>
+  <desc>Root description</desc>
+  <trk><trkseg><trkpt lat="45.0" lon="7.0"><ele>100</ele></trkpt></trkseg></trk>
+</gpx>"#;
+        let parsed = parse_all(gpx);
+        assert_eq!(parsed.metadata.name.as_deref(), Some("Root title"));
+        assert_eq!(
+            parsed.metadata.description.as_deref(),
+            Some("Root description")
+        );
+        assert_eq!(parsed.locations.len(), 1);
+    }
+
+    #[test]
+    fn parse_all_skips_wpt_when_opening_tag_is_malformed() {
+        let gpx = br#"<gpx>
+  <wpt lat="45.0" lon="7.0"</wpt>
+  <wpt lat="45.1" lon="7.1"><name>Valid</name><time>invalid</time></wpt>
+</gpx>"#;
+        let parsed = parse_all(gpx);
+        assert_eq!(parsed.waypoints.len(), 1);
+        assert_eq!(parsed.waypoints[0].name, "Valid");
+        assert!(parsed.waypoints[0].time.is_none());
+    }
+
+    #[test]
+    fn parse_trace_points_stops_when_closing_tag_is_missing() {
+        let gpx = br#"<gpx><trk><trkseg>
+  <trkpt lat="45.0" lon="7.0"><ele>100</ele></trkpt>
+  <trkpt lat="45.1" lon="7.1"><ele>110</ele>
+</trkseg></trk></gpx>"#;
+        let locations = parse_trace_points(gpx);
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].altitude, 100.0);
+    }
 }
