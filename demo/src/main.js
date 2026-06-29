@@ -1,97 +1,121 @@
 import init, { parseGpx, analyzeGpx } from "../pkg/navigo.js";
 
+// ── Race catalogue ───────────────────────────────────────────────────────────────
+
+const RACES = [
+  { file: "grp-160-2026.gpx", label: "Ultra Tour Solo — 160 km" },
+  { file: "grp-120-2026.gpx", label: "Tour des Cirques — 120 km" },
+  { file: "grp-80-2026.gpx", label: "Tour des Lacs — 80 km" },
+  { file: "grp-60-2026.gpx", label: "Tour du Moudang — 60 km" },
+  { file: "grp-50-2026.gpx", label: "Tour du Bastan — 50 km" },
+  { file: "grp-40-gela-2026.gpx", label: "Tour de la Gela — 40 km" },
+  { file: "grp-40-neouvielle.gpx", label: "Tour du Néouvielle — 40 km" },
+];
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 await init();
 
-const response = await fetch("/grp-160-2026.gpx");
-const buffer = await response.arrayBuffer();
-const bytes = new Uint8Array(buffer);
+// Redraw target for the resize listener — set on every successful race load.
+let profileState = null;
+const canvas = document.getElementById("profile");
+window.addEventListener("resize", () => {
+  if (profileState) drawProfile(canvas, ...profileState);
+});
 
-let trace;
-let full;
+const select = document.getElementById("race-select");
+select.innerHTML = RACES.map(
+  (r) => `<option value="${r.file}">${r.label}</option>`,
+).join("");
+select.addEventListener("change", () => loadRace(select.value));
 
-try {
-  // parseGpx — lean path: only <trkpt> track-points are parsed.
-  // Use it when you only need raw GPS arrays (elevation profile, distances, peaks…).
-  trace = parseGpx(bytes);
+await loadRace(RACES[0].file);
 
-  if (!trace) {
-    document.body.innerHTML =
-      '<p style="padding:2rem;font-family:monospace">Failed to parse GPX.</p>';
-    throw new Error("GPX parse failed");
+// ── Race loading ──────────────────────────────────────────────────────────────
+
+async function loadRace(file) {
+  setStatus("");
+  let trace;
+  try {
+    const response = await fetch(`/${file}`);
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    // parseGpx — lean path: only <trkpt> track-points are parsed.
+    // Use it when you only need raw GPS arrays (elevation profile, distances, peaks…).
+    trace = parseGpx(bytes);
+
+    if (!trace) {
+      setStatus("Failed to parse GPX.");
+      return;
+    }
+
+    // Cache all bulk arrays once — each method copies WASM→JS heap (O(n)).
+    const locsFlat = trace.getLocationsFlat();
+    const dists = trace.getCumulativeDistances();
+    const peaks = trace.getPeaks();
+    const valleys = trace.getValleys();
+    const climbs = trace.climbs();
+    const area = trace.area();
+
+    // analyzeGpx — full path: parses track-points + waypoints + metadata, then
+    // runs the legs/sections/stages pipeline. Call this only when you need the
+    // race analysis; it is independent of the Trace handle above.
+    const full = analyzeGpx(bytes, {
+      basePaceSPerKm: 500,
+      kFatigue: 0.002,
+      lifeBaseStopS: 3600,
+    });
+
+    if (!full) {
+      setStatus("Failed to analyze GPX.");
+      return;
+    }
+
+    // ── Header ──────────────────────────────────────────────────────────────────
+
+    setText("race-title", full.metadata.name || "");
+
+    // ── Stats cards ─────────────────────────────────────────────────────────────
+
+    setText("stat-distance", trace.totalDistance.toFixed(1) + " km");
+    setText("stat-gain", "+" + Math.round(trace.totalElevationGain) + " m");
+    setText("stat-loss", "−" + Math.round(trace.totalElevationLoss) + " m");
+    setText("stat-locations", trace.locationCount.toString());
+    setText("stat-climbs", climbs.length.toString());
+
+    if (area) {
+      setText(
+        "stat-bbox",
+        `${area.minLatitude.toFixed(3)}°N – ${area.maxLatitude.toFixed(3)}°N, ` +
+          `${area.minLongitude.toFixed(3)}°E – ${area.maxLongitude.toFixed(3)}°E`,
+      );
+    }
+
+    // ── Elevation profile ───────────────────────────────────────────────────────
+
+    profileState = [locsFlat, dists, peaks, valleys, climbs];
+    drawProfile(canvas, ...profileState);
+
+    // ── Climbs list ─────────────────────────────────────────────────────────────
+
+    renderClimbs(climbs);
+
+    // ── Checkpoints ─────────────────────────────────────────────────────────────
+
+    renderWaypoints(full.waypoints);
+
+    // ── Sections ───────────────────────────────────────────────────────────────
+
+    renderSections(full.sections, full.waypoints);
+
+    // ── Stages ─────────────────────────────────────────────────────────────────
+
+    renderStages(full.stages, full.waypoints);
+  } finally {
+    // ── Free WASM memory — all array data already copied to JS ─────────────────
+    trace?.free();
   }
-
-  // Cache all bulk arrays once — each method copies WASM→JS heap (O(n)).
-  const locsFlat = trace.getLocationsFlat();
-  const dists = trace.getCumulativeDistances();
-  const peaks = trace.getPeaks();
-  const valleys = trace.getValleys();
-  const climbs = trace.climbs();
-  const area = trace.area();
-
-  // analyzeGpx — full path: parses track-points + waypoints + metadata, then
-  // runs the legs/sections/stages pipeline. Call this only when you need the
-  // race analysis; it is independent of the Trace handle above.
-  full = analyzeGpx(bytes, {
-    basePaceSPerKm: 500,
-    kFatigue: 0.002,
-    lifeBaseStopS: 3600,
-  });
-
-  if (!full) {
-    document.body.innerHTML =
-      '<p style="padding:2rem;font-family:monospace">Failed to analyze GPX.</p>';
-    throw new Error("GPX analysis failed");
-  }
-
-  // ── Header ────────────────────────────────────────────────────────────────────
-
-  setText("race-title", full.metadata.name || "");
-
-  // ── Stats cards ───────────────────────────────────────────────────────────────
-
-  setText("stat-distance", trace.totalDistance.toFixed(1) + " km");
-  setText("stat-gain", "+" + Math.round(trace.totalElevationGain) + " m");
-  setText("stat-loss", "−" + Math.round(trace.totalElevationLoss) + " m");
-  setText("stat-locations", trace.locationCount.toString());
-  setText("stat-climbs", climbs.length.toString());
-
-  if (area) {
-    setText(
-      "stat-bbox",
-      `${area.minLatitude.toFixed(3)}°N – ${area.maxLatitude.toFixed(3)}°N, ` +
-        `${area.minLongitude.toFixed(3)}°E – ${area.maxLongitude.toFixed(3)}°E`,
-    );
-  }
-
-  // ── Elevation profile ─────────────────────────────────────────────────────────
-
-  const canvas = document.getElementById("profile");
-  drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs);
-  window.addEventListener("resize", () =>
-    drawProfile(canvas, locsFlat, dists, peaks, valleys, climbs),
-  );
-
-  // ── Climbs list ───────────────────────────────────────────────────────────────
-
-  renderClimbs(climbs);
-
-  // ── Checkpoints ───────────────────────────────────────────────────────────────
-
-  renderWaypoints(full.waypoints);
-
-  // ── Sections ─────────────────────────────────────────────────────────────────
-
-  renderSections(full.sections, full.waypoints);
-
-  // ── Stages ───────────────────────────────────────────────────────────────────
-
-  renderStages(full.stages, full.waypoints);
-} finally {
-  // ── Free WASM memory — all array data already copied to JS ───────────────────
-  // `full` is a plain JS object (no WASM handle), nothing to free there.
-  trace?.free();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,6 +123,13 @@ try {
 function setText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+function setStatus(message) {
+  const el = document.getElementById("status-message");
+  if (!el) return;
+  el.textContent = message;
+  el.style.display = message ? "block" : "none";
 }
 
 function formatDuration(totalSeconds) {

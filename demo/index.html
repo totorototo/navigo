@@ -367,6 +367,25 @@
         margin-top: 0.5rem;
       }
 
+      /* ── RACE SWITCHER ──────────────────────────────────────────────── */
+      .race-switcher {
+        margin-top: 1rem;
+      }
+
+      #race-select {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: var(--yellow);
+        color: var(--black);
+        border: 2px solid var(--yellow);
+        padding: 0.45rem 0.6rem;
+        width: 100%;
+        max-width: 320px;
+        cursor: pointer;
+      }
+
       footer {
         border-top: var(--b);
         padding-top: 1rem;
@@ -490,6 +509,9 @@
       <h1>Navigo</h1>
       <div class="sub">GPS trace analysis &mdash; compiled to WebAssembly</div>
       <div id="race-title"></div>
+      <div class="race-switcher">
+        <select id="race-select"></select>
+      </div>
     </header>
 
     <div class="stats">
@@ -516,6 +538,8 @@
     </div>
 
     <div class="bbox-row" id="stat-bbox">&nbsp;</div>
+
+    <p class="empty" id="status-message" style="display: none"></p>
 
     <div class="section-title">Elevation profile</div>
     <div class="canvas-wrap">

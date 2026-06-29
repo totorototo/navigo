@@ -2,4 +2,5 @@
 Cargo.lock
 /npm/bundler
 /npm/web
-/npm/LICENSE/.playwright-mcp/
+/npm/LICENSE
+/.playwright-mcp/

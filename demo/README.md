@@ -5,8 +5,10 @@ Brutalist design — monospace, black borders, no gradients.
 
 ## what it shows
 
-Loads a real race GPX file (`public/grp-160-2026.gpx`) and renders:
+Loads a real Grand Raid des Pyrénées race GPX file and renders:
 
+- Race selector — switch between the 160/120/80/60/50/40/40 km GRP races
+  (`public/grp-*.gpx`), each re-parsed and re-analyzed on selection
 - Stat cards — total distance, elevation gain / loss, location count, detected climbs, bounding box
 - Elevation profile canvas — solid black fill, yellow climb zones, peak / valley markers
 - Per-climb breakdown (distance, gain, grade, summit altitude, Garmin score)
@@ -65,7 +67,7 @@ demo/pkg/navigo.js + navigo_bg.wasm
         │
    browser loads WASM
         │
-fetch("/grp-160-2026.gpx") → Uint8Array
+fetch(`/${selectedRaceFile}`) → Uint8Array
         │
 parseGpx(bytes)   ← one copy JS → WASM; track-points, waypoints
         │           and metadata all parsed once
