@@ -119,8 +119,8 @@ fn advance_range(
 /// model's prediction so far. Phase 2 forward-predicts remaining intervals at the
 /// calibrated pace, re-seeding the circadian clock to `actual_elapsed_s`.
 ///
-    /// Returns `None` when fewer than 2 boundaries exist.
-    pub fn recalibrate_from_current(
+/// Returns `None` when fewer than 2 boundaries exist.
+pub fn recalibrate_from_current(
     trace: &Trace,
     waypoints: &[Waypoint],
     kind: BoundaryKind,
