@@ -16,8 +16,8 @@ use super::options::{WasmAnalyzeOptions, WasmRecalibrateOptions};
 /// const trace = buildTrace(pts);
 /// registry.register(trace, trace);
 /// ```
-#[wasm_bindgen]
-pub struct Trace {
+#[wasm_bindgen(js_name = Trace)]
+pub struct WasmTrace {
     inner: crate::trace::Trace,
     waypoints: Vec<crate::waypoint::Waypoint>,
     metadata: crate::gpx::GpxMetadata,
@@ -26,7 +26,7 @@ pub struct Trace {
 // Plain (non-wasm_bindgen) constructor and accessors used internally by
 // `wasm.rs` — kept out of the `#[wasm_bindgen] impl` block below so they
 // aren't picked up as part of the JS-facing API.
-impl Trace {
+impl WasmTrace {
     pub(crate) fn new(
         inner: crate::trace::Trace,
         waypoints: Vec<crate::waypoint::Waypoint>,
@@ -52,8 +52,8 @@ impl Trace {
     }
 }
 
-#[wasm_bindgen]
-impl Trace {
+#[wasm_bindgen(js_class = Trace)]
+impl WasmTrace {
     // ── Scalar getters — free boundary crossing (passed in registers) ──────────
 
     #[wasm_bindgen(getter, js_name = "totalDistance")]
@@ -132,15 +132,23 @@ impl Trace {
 
     /// Returns `{ longitude, latitude, altitude }`, or `undefined` when the
     /// distance is negative / the trace has no matching point.
+    ///
+    /// Failure contract:
+    /// - query misses return `undefined`;
+    /// - serialization failure also returns `undefined`, without throwing.
     #[wasm_bindgen(js_name = "pointAtDistance")]
     pub fn point_at_distance(&self, dist_km: f64) -> Option<JsValue> {
         self.inner
             .point_at_distance(dist_km)
-            .and_then(|loc| serde_wasm_bindgen::to_value(loc).ok())
+            .and_then(super::js::serialize_silent)
     }
 
     /// Returns `{ location: { longitude, latitude, altitude }, index, distance }`,
     /// or `undefined` when no closest point is found.
+    ///
+    /// Failure contract:
+    /// - query misses return `undefined`;
+    /// - serialization failure also returns `undefined`, without throwing.
     #[wasm_bindgen(js_name = "findClosestPoint")]
     pub fn find_closest_point(
         &self,
@@ -158,6 +166,11 @@ impl Trace {
 
     /// Like `find_closest_point` but only searches from `start_from` onwards —
     /// use this on live-tracking loops to avoid snapping to an earlier position.
+    ///
+    /// Failure contract:
+    /// - query misses return `undefined`;
+    /// - out-of-bounds `start_from` behaves like a miss and returns `undefined`;
+    /// - serialization failure also returns `undefined`, without throwing.
     #[wasm_bindgen(js_name = "findClosestPointFrom")]
     pub fn find_closest_point_from(
         &self,
@@ -179,6 +192,10 @@ impl Trace {
 
     /// Flat `Float64Array` `[lon, lat, alt, …]` for all points between the two
     /// cumulative distances, or `undefined` on invalid input.
+    ///
+    /// Failure contract:
+    /// - invalid ranges return `undefined`;
+    /// - this method does not throw.
     #[wasm_bindgen(js_name = "sliceBetweenDistances")]
     pub fn slice_between_distances(&self, start_km: f64, end_km: f64) -> Option<Vec<f64>> {
         self.inner
@@ -187,7 +204,11 @@ impl Trace {
     }
 
     /// Flat `Float64Array` `[lon, lat, alt, …]` for the index range (inclusive).
-    /// Throws on out-of-bounds or invalid input.
+    ///
+    /// Failure contract:
+    /// - invalid ranges and out-of-bounds indices throw a `JsError`;
+    /// - unlike the query methods above, this method does not use `undefined`
+    ///   as its failure channel.
     #[wasm_bindgen(js_name = "getSection")]
     pub fn get_section(&self, start_index: u32, end_index: u32) -> Result<Vec<f64>, JsError> {
         self.inner
@@ -196,20 +217,32 @@ impl Trace {
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Returns `{ min_longitude, max_longitude, min_latitude, max_latitude }`.
+    /// Returns `{ minLongitude, maxLongitude, minLatitude, maxLatitude }`.
+    ///
+    /// Failure contract:
+    /// - returns `null` only if JS serialization fails;
+    /// - serialization failures log a warning to `console.warn`.
     pub fn area(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(self.inner.area()).unwrap_or(JsValue::NULL)
+        super::js::serialize_or_null(self.inner.area(), "Trace.area()")
     }
 
     /// Returns `{ positive, negative }` (raw, non-denoised elevation totals).
+    ///
+    /// Failure contract:
+    /// - returns `null` only if JS serialization fails;
+    /// - serialization failures log a warning to `console.warn`.
     pub fn elevation(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(self.inner.elevation()).unwrap_or(JsValue::NULL)
+        super::js::serialize_or_null(self.inner.elevation(), "Trace.elevation()")
     }
 
     /// Returns an array of climb objects:
     /// `[{ start_index, end_index, start_dist_km, climb_dist_km, elevation_gain, summit_elev, avg_gradient }, …]`
+    ///
+    /// Failure contract:
+    /// - returns `undefined` only if JS serialization fails;
+    /// - serialization failures log a warning to `console.warn`.
     pub fn climbs(&self) -> JsValue {
-        serde_wasm_bindgen::to_value(self.inner.climbs()).unwrap_or(JsValue::UNDEFINED)
+        super::js::serialize_or_undefined(self.inner.climbs(), "Trace.climbs()")
     }
 
     /// Compute the race analysis (waypoints, legs, sections, stages) using
@@ -222,14 +255,16 @@ impl Trace {
     ///
     /// Returns a JS object with `{ waypoints, legs, sections, stages, metadata }`
     /// or `null` when `options` is malformed.
+    ///
+    /// Failure contract:
+    /// - malformed `options` return `null` and log a warning to `console.warn`;
+    /// - serialization failures also return `null` and log a warning;
+    /// - this method does not throw on user input errors.
     pub fn analyze(&self, options: JsValue) -> Option<JsValue> {
-        let options: WasmAnalyzeOptions = serde_wasm_bindgen::from_value(options)
-            .map_err(|e| super::warn(&format!("navigo: analyze() options error: {e}")))
-            .ok()?;
-        let analysis = super::compute_route_analysis(self, &options);
-        serde_wasm_bindgen::to_value(&analysis)
-            .map_err(|e| super::warn(&format!("navigo: analyze() serialization error: {e}")))
-            .ok()
+        let options: WasmAnalyzeOptions =
+            super::js::deserialize(options, "Trace.analyze() options")?;
+        let analysis = super::pipeline::compute_route_analysis(self, &options);
+        super::js::serialize(&analysis, "Trace.analyze()")
     }
 
     /// Live, mid-race ETA recalibration — corrects the static `.analyze()`
@@ -249,14 +284,18 @@ impl Trace {
     /// calibrated_base_pace_s_per_km, predicted_so_far_s, actual_elapsed_s,
     /// etas: [{ id, end_index, remaining_duration_s, cumulative_remaining_s }, …] }`.
     /// Returns `null` when `options` is malformed.
+    ///
+    /// Failure contract:
+    /// - malformed `options` return `null` and log a warning to `console.warn`;
+    /// - serialization failures also return `null` and log a warning;
+    /// - valid recalibration with insufficient typed boundaries yields
+    ///   `{ sections: null, stages: null }` rather than a top-level `null`;
+    /// - this method does not throw on user input errors.
     pub fn recalibrate(&self, options: JsValue) -> Option<JsValue> {
-        let options: WasmRecalibrateOptions = serde_wasm_bindgen::from_value(options)
-            .map_err(|e| super::warn(&format!("navigo: recalibrate() options error: {e}")))
-            .ok()?;
-        let recalibration = super::compute_recalibration(self, &options);
-        serde_wasm_bindgen::to_value(&recalibration)
-            .map_err(|e| super::warn(&format!("navigo: recalibrate() serialization error: {e}")))
-            .ok()
+        let options: WasmRecalibrateOptions =
+            super::js::deserialize(options, "Trace.recalibrate() options")?;
+        let recalibration = super::pipeline::compute_recalibration(self, &options);
+        super::js::serialize(&recalibration, "Trace.recalibrate()")
     }
 }
 
@@ -264,12 +303,11 @@ impl Trace {
 
 fn closest_result(result: Option<(&Location, usize, f64)>) -> Option<JsValue> {
     let (loc, idx, dist) = result?;
-    serde_wasm_bindgen::to_value(&ClosestPointResult {
+    super::js::serialize_silent(&ClosestPointResult {
         location: loc,
         index: idx as u32,
         distance: dist,
     })
-    .ok()
 }
 
 fn locs_to_flat(locs: &[Location]) -> Vec<f64> {

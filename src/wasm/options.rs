@@ -90,7 +90,7 @@ impl WasmRecalibrateOptions {
 
 #[cfg(test)]
 impl WasmAnalyzeOptions {
-    /// Used by `wasm.rs`'s pipeline tests, which need a concrete options
+    /// Used by `pipeline.rs`'s tests, which need a concrete options
     /// value but live outside this module.
     pub(crate) fn sample() -> Self {
         Self {
@@ -104,7 +104,7 @@ impl WasmAnalyzeOptions {
 
 #[cfg(test)]
 impl WasmRecalibrateOptions {
-    /// Used by `wasm.rs`'s pipeline tests, which need a concrete options
+    /// Used by `pipeline.rs`'s tests, which need a concrete options
     /// value but live outside this module.
     pub(crate) fn sample(current_index: u32, actual_elapsed_s: f64) -> Self {
         Self {

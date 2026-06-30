@@ -42,7 +42,7 @@ npm run build       # production build → demo/dist
 ```
 
 There are no unit tests under `src/`'s own `#[cfg(test)]` modules in isolation
-from integration tests — both exist (e.g. `src/wasm.rs`'s `pipeline_tests`,
+from integration tests — both exist (e.g. `src/wasm/pipeline.rs`'s tests,
 `tests/build_trace.rs`). Run the whole suite with `cargo test --all-features`
 before considering a change done; CI fails the build on any clippy warning.
 
@@ -76,12 +76,15 @@ from `lib.rs` and the WASM layer wraps it rather than re-implementing it.
   `interval.rs` → `segment.rs`.
 - `calibration.rs` — recomputes remaining ETAs mid-race from one known
   elapsed-time data point; uses `AdvanceParams` struct internally.
-- `wasm/` (feature-gated) — `wasm.rs` is the `#[wasm_bindgen]` entry surface
-  (`parseGpx`, `parseWaypoints`, `parseMetadata`, `buildTrace`, `analyzeGpx`);
-  `wasm/trace.rs` wraps `Trace` as a JS-visible class; `wasm/dto.rs` defines
-  the serde-serializable shapes returned to JS; `wasm/options.rs` parses the
-  JS options object. This module only adapts — it must not contain analysis
-  logic that belongs in the core modules above.
+- `wasm/` (feature-gated) — `wasm.rs` is the thin `#[wasm_bindgen]` entry
+  surface (`parseGpx`, `parseWaypoints`, `parseMetadata`, `buildTrace`,
+  `analyzeGpx`); `wasm/pipeline.rs` holds the WASM-side orchestration shared by
+  entry points and methods; `wasm/js.rs` centralizes `JsValue` / serde glue and
+  warning helpers; `wasm/trace.rs` wraps the core `Trace` as a JS-visible class
+  (`Trace` in JS, `WasmTrace` in Rust for clarity); `wasm/dto.rs` defines the
+  serde-serializable shapes returned to JS; `wasm/options.rs` parses the JS
+  options object. This module only adapts — it must not contain analysis logic
+  that belongs in the core modules above.
 
 **WASM memory model**: data lives in WASM linear memory; JS holds a thin
 pointer. Only boundaries cross JS↔WASM — scalars are register-free, bulk

@@ -397,6 +397,8 @@ Prebuilt bindings are published to npm as [`@totorototo/navigo`](https://www.npm
 ### how it works
 
 All data lives in WASM linear memory. The JS side holds a thin pointer (`Trace`).
+Internally, the Rust wrapper type is named `WasmTrace` to distinguish it from the
+core crate's `Trace`, but the public JS API continues to expose `Trace`.
 Only the boundaries cross the WASM↔JS membrane — scalars are free (registers), bulk arrays are copied once on demand.
 
 ```
@@ -410,6 +412,27 @@ Trace stays in WASM memory
        ├── trace.locationsFlat         → one O(n) copy, cache it
        └── trace.free()               ← you must call this (no GC bridge)
 ```
+
+### failure contract
+
+The WASM API uses a small set of predictable failure channels:
+
+- **parse/build entry points return `null`** when they cannot produce a trace
+  (`buildTrace`, `parseGpx`, `parseGpxAll`, `analyzeGpx`);
+- **query-style methods return `undefined`** when there is simply no matching
+  result (`pointAtDistance`, `findClosestPoint`, `findClosestPointFrom`,
+  `sliceBetweenDistances`);
+- **validation/configuration failures return `null`** for high-level JSON
+  methods (`analyzeGpx`, `trace.analyze()`, `trace.recalibrate()`);
+- **range/index violations throw** only for APIs that are explicitly index-based
+  (`trace.getSection(...)`);
+- when JS serialization/deserialization itself fails, the WASM layer logs a
+  warning to `console.warn` and then uses that method's normal failure channel
+  (`null` or `undefined`).
+
+In other words: **`null` means “could not produce the requested payload”,
+`undefined` means “no query result”, and `throw` is reserved for explicit
+index/range contract violations.**
 
 ### build
 
