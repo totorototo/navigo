@@ -1,6 +1,6 @@
 [package]
 name = "navigo"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["Thomas <el.totorototo@gmail.com>"]
 edition = "2021"
 description = "GPS/geospatial data for Rust — trace analysis, GPX parsing, Minetti pace model, race route analysis (legs/sections/stages), live calibration."
