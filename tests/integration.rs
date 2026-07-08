@@ -1,11 +1,11 @@
 //! Integration tests covering the full analysis pipeline end-to-end.
 //!
-//! Tests exercise GPX parsing, trace construction, section/stage computation,
-//! and calibration — the same paths the WASM layer calls.
+//! Tests exercise GPX parsing, trace construction, section/stage computation —
+//! the same paths the WASM layer calls.
 
 use navigo::{
-    build_trace, parse_metadata, parse_trace_points, parse_waypoints, AnalysisOptions,
-    BoundaryKind, Location, Trace, Waypoint,
+    build_trace, parse_metadata, parse_trace_points, parse_waypoints, AnalysisOptions, Location,
+    Trace, Waypoint,
 };
 
 // ── GPX Parsing ──────────────────────────────────────────────────────────────
@@ -239,52 +239,6 @@ fn max_completion_time_from_waypoint_timestamps() {
 }
 
 // ── Calibration Pipeline ─────────────────────────────────────────────────────
-
-#[test]
-fn recalibration_from_start() {
-    let (trace, wpts) = build_race_trace();
-    let result = navigo::calibration::recalibrate_from_current(
-        &trace,
-        &wpts,
-        BoundaryKind::Section,
-        0,
-        0.0,
-        &AnalysisOptions::default().life_base_stop(0),
-    )
-    .unwrap();
-
-    // Factor should be 1.0 with zero elapsed
-    assert!((result.calibration_factor - 1.0).abs() < 1e-9);
-    // All intervals are remaining
-    assert!(result.etas.iter().all(|e| e.remaining_duration_s > 0.0));
-}
-
-#[test]
-fn recalibration_returns_none_without_boundaries() {
-    let locs = vec![
-        Location {
-            latitude: 0.0,
-            longitude: 0.0,
-            altitude: 0.0,
-        },
-        Location {
-            latitude: 0.001,
-            longitude: 0.0,
-            altitude: 0.0,
-        },
-    ];
-    let trace = build_trace(&locs).unwrap();
-    let wpts: Vec<Waypoint> = vec![];
-    let result = navigo::calibration::recalibrate_from_current(
-        &trace,
-        &wpts,
-        BoundaryKind::Section,
-        0,
-        0.0,
-        &AnalysisOptions::default(),
-    );
-    assert!(result.is_none());
-}
 
 // ── Analysis Options Builder ─────────────────────────────────────────────────
 

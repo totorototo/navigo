@@ -1,5 +1,4 @@
 mod area;
-pub mod calibration;
 mod climbs;
 mod elevation;
 mod error;
@@ -23,7 +22,6 @@ mod wasm;
 pub mod waypoint;
 
 pub use area::Area;
-pub use calibration::{BoundaryKind, RecalibratedEta, Recalibration};
 pub use climbs::ClimbStats;
 pub use elevation::{Elevation, GainLoss};
 pub use error::TraceError;
@@ -35,8 +33,6 @@ pub use section::SectionStats;
 pub use stage::StageStats;
 pub use time::parse_iso8601_to_epoch;
 pub use trace::Trace;
-#[cfg(feature = "wasm")]
-pub use wasm::build_trace as build_wasm_trace;
 pub use waypoint::Waypoint;
 
 pub fn build_trace(locations: &[Location]) -> Result<Trace, TraceError> {
