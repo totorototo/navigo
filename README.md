@@ -5,7 +5,7 @@
 [![docs.rs](https://docs.rs/navigo/badge.svg)](https://docs.rs/navigo)
 [![License](https://img.shields.io/crates/l/navigo.svg)](LICENSE)
 
-GPS/geospatial analysis in Rust — trace processing, GPX parsing, Minetti pace model, race route analysis, and live recalibration.
+GPS/geospatial analysis in Rust — trace processing, GPX parsing, Minetti pace model, and race route analysis.
 
 # api / usage
 
@@ -354,41 +354,6 @@ let epoch: Result<i64, _> = parse_iso8601_to_epoch("2025-11-20T12:00:00Z");
 
 ---
 
-## Live calibration
-
-Recalibrate remaining ETAs mid-race given the actual elapsed time at a known position.
-
-```rust
-use navigo::calibration::{recalibrate_from_current, BoundaryKind};
-use navigo::AnalysisOptions;
-
-let options = AnalysisOptions::default()
-    .base_pace(500.0)
-    .fatigue(0.002)
-    .life_base_stop(0);
-
-let result = recalibrate_from_current(
-    &trace, &waypoints, BoundaryKind::Section,
-    current_index,   // trace point index snapped to current position
-    actual_elapsed_s,
-    &options,
-);
-
-if let Some(cal) = result {
-    cal.calibration_factor;            // clamped to [0.5, 3.0]
-    cal.calibrated_base_pace_s_per_km; // adjusted flat pace
-    for eta in &cal.etas {
-        eta.id;
-        eta.remaining_duration_s;
-        eta.cumulative_remaining_s;
-    }
-}
-```
-
-The factor is only applied when `predicted_so_far ≥ 300 s` to avoid noise from very short segments.
-
----
-
 ## WebAssembly
 
 The library can be compiled to WASM for use in web applications via the `wasm` feature.
@@ -499,10 +464,9 @@ const bytes = new Uint8Array(
 
 // parseGpxAll triple-scans bytes once for track-points + waypoints +
 // metadata, so nothing needs to be re-sent for the steps below. If you don't
-// need .analyze()/.recalibrate(), use the leaner parseGpx instead — it skips
-// waypoints and metadata.
+// need .analyze(), use the leaner parseGpx instead — it skips waypoints and metadata.
 const trace = parseGpxAll(bytes);
-// → Trace | null  (same getters/methods as buildTrace, plus .analyze()/.recalibrate())
+// → Trace | null  (same getters/methods as buildTrace, plus .analyze())
 
 const options = { basePaceSPerKm: 500, kFatigue: 0.002, lifeBaseStopS: 3600 };
 
@@ -522,38 +486,6 @@ const analysis = trace.analyze(options);
 const full = analyzeGpx(bytes, options);
 // → { trace: { totalDistanceKm, totalElevationGainM, … }, ...analysis }
 //   or null on parse failure
-```
-
-**Live recalibration (`trace.recalibrate()`)**
-
-Once the race clock has started and the runner has a GPS fix, correct the
-static `.analyze()` prediction against actual progress — see
-[Live calibration](#live-calibration) above for the underlying model.
-
-```js
-const currentIndex = trace.findClosestPoint(lon, lat, alt)?.index;
-
-const recalibration = trace.recalibrate({
-  basePaceSPerKm: 500,
-  kFatigue: 0.002,
-  lifeBaseStopS: 3600,
-  currentIndex,
-  actualElapsedS: 5400, // real seconds since race start
-});
-// → {
-//     sections: { calibrationFactor, calibratedBasePaceSPerKm,
-//                  predictedSoFarS, actualElapsedS,
-//                  etas: [{ id, endIndex, remainingDurationS, cumulativeRemainingS }, …] } | null,
-//     stages:   { …same shape, at Start/LifeBase/Arrival granularity } | null,
-//   }
-//   or null on malformed options
-//
-// `sections` and `stages` solve independent calibration factors — each
-// re-predicts at its own boundary granularity, with its own per-range
-// weather lookup. Either is null when that boundary kind has fewer than
-// 2 typed waypoints.
-
-trace.free();
 ```
 
 ### memory management
