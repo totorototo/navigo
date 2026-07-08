@@ -53,7 +53,6 @@ impl WasmAnalyzeOptions {
     }
 }
 
-
 #[cfg(test)]
 impl WasmAnalyzeOptions {
     /// Used by `wasm.rs`'s pipeline tests, which need a concrete options
@@ -67,7 +66,6 @@ impl WasmAnalyzeOptions {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

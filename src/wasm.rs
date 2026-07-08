@@ -189,7 +189,6 @@ fn compute_route_analysis(trace: &Trace, options: &WasmAnalyzeOptions) -> WasmRo
     )
 }
 
-
 #[cfg(test)]
 mod pipeline_tests {
     use super::*;
@@ -287,5 +286,4 @@ mod pipeline_tests {
         assert!(json["sections"].is_null());
         assert!(json["stages"].is_null());
     }
-
 }

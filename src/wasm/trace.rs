@@ -231,7 +231,6 @@ impl Trace {
             .map_err(|e| super::warn(&format!("navigo: analyze() serialization error: {e}")))
             .ok()
     }
-
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
