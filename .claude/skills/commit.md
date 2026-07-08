@@ -52,6 +52,12 @@ Then:
 ```
 git add Cargo.toml ...
 git commit -m "chore: bump version to X.Y.Z"
+```
+
+**Important**: the version bump must be the *last* commit before tagging — do not let unrelated commits land between it and the tag.
+
+```
 git tag vX.Y.Z
+git log --oneline -1 vX.Y.Z   # verify tag points at the right commit
 git push && git push origin vX.Y.Z
 ```
