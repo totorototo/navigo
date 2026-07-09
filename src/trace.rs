@@ -4,7 +4,7 @@ use crate::elevation::{
     compute_gain_loss, compute_slopes, cumulative_horizontal_distances, ELEV_MEDIAN_RADIUS_KM,
     ELEV_NOISE_THRESHOLD_M,
 };
-use crate::extrema::{find_peaks, find_valleys};
+use crate::extrema::{find_peaks, find_valleys, reconcile_alternating};
 use crate::simplify::douglas_peucker_indices;
 use crate::{Elevation, Location, TraceError};
 
@@ -127,6 +127,12 @@ impl Trace {
         } else {
             vec![]
         };
+        // Peaks and valleys are detected independently (see extrema.rs), so
+        // nothing guarantees they alternate. Collapse any run of consecutive
+        // same-type extrema to its single best representative before handing
+        // the pair to climb detection or exposing it to consumers (e.g. the
+        // demo's elevation-profile view).
+        let (peaks, valleys) = reconcile_alternating(&peaks, &valleys, &elevations);
 
         let climbs = detect_climbs(&peaks, &valleys, &locations, &cumulative_distances);
 

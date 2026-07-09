@@ -44,11 +44,15 @@ fn qualifies_as_climb(dist_km: f64, avg_gradient: f64) -> bool {
 
 /// Derive climb segments from detected peaks and valleys.
 ///
-/// For each peak, the nearest preceding valley is found.  Falls back to index 0
-/// when no valley precedes the peak (the trail start acts as the implicit origin).
-/// Each valley can only be claimed by one climb — once used, it is consumed.
+/// For each peak, the nearest preceding valley is used as the climb's valley
+/// base (index 0 when no valley precedes the peak — the trail start acts as
+/// the implicit origin).
 ///
-/// `peaks` and `valleys` must be sorted ascending.
+/// `peaks` and `valleys` must be sorted ascending and must already alternate
+/// (no two consecutive peaks or two consecutive valleys) — see
+/// `extrema::reconcile_alternating`, which the only caller (`Trace::new`)
+/// runs beforehand. Without that guarantee a peak could reuse a valley
+/// already claimed by an earlier climb.
 /// `cum_distances` must be aligned with `locations` (same length, km).
 pub fn detect_climbs(
     peaks: &[usize],
@@ -63,7 +67,6 @@ pub fn detect_climbs(
 
     let mut climbs = Vec::new();
     let mut valley_cursor = 0usize;
-    let mut min_valley_start = 0usize; // no two climbs may share the same start
 
     for &peak_idx in peaks {
         debug_assert!(peak_idx < locations.len());
@@ -73,25 +76,10 @@ pub fn detect_climbs(
             valley_cursor += 1;
         }
 
-        let ampd_valley_idx = if !valleys.is_empty() && valleys[valley_cursor] < peak_idx {
+        let valley_idx = if !valleys.is_empty() && valleys[valley_cursor] < peak_idx {
             valleys[valley_cursor]
         } else {
             0
-        };
-
-        // If the nearest AMPD valley was already claimed by a prior climb, scan the
-        // unclaimed range for the actual lowest point to use as the valley base.
-        let valley_idx = if ampd_valley_idx < min_valley_start {
-            (min_valley_start..peak_idx)
-                .min_by(|&a, &b| {
-                    locations[a]
-                        .altitude
-                        .partial_cmp(&locations[b].altitude)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(min_valley_start)
-        } else {
-            ampd_valley_idx
         };
 
         if valley_idx >= peak_idx {
@@ -134,8 +122,6 @@ pub fn detect_climbs(
             summit_elev,
             avg_gradient,
         });
-
-        min_valley_start = peak_idx;
     }
 
     climbs
@@ -193,23 +179,20 @@ mod tests {
     }
 
     #[test]
-    fn two_peaks_no_ampd_valley_between_them_uses_fallback_minimum() {
-        // AMPD detected no valley between the two peaks.  The fallback path
-        // should find the lowest point in the unclaimed range and use it as
-        // the valley base for the second climb.
-        //
-        // Climb A: valley=0 (100 m) → peak=2 (600 m), 2 km, 25 %, score 50 ✓
-        // Climb B: fallback valley=3 (580 m) → peak=4 (700 m), 1.5 km, 8 %, score 12 ✓
+    fn second_peak_uses_the_valley_that_precedes_it() {
+        // With alternating input (as guaranteed upstream by
+        // reconcile_alternating), each peak's preceding valley is distinct —
+        // no "already claimed" fallback is needed.
         let pts = vec![
-            loc(0.0, 100.0), // 0: valley
+            loc(0.0, 100.0), // 0: valley A
             loc(0.1, 200.0), // 1
             loc(0.2, 600.0), // 2: peak A
-            loc(0.3, 580.0), // 3: dip — not detected by AMPD, used as fallback valley
+            loc(0.3, 580.0), // 3: valley B
             loc(0.4, 700.0), // 4: peak B
         ];
         let dists = vec![0.0, 0.5, 2.0, 2.5, 4.0];
         let peaks = vec![2usize, 4];
-        let valleys = vec![0usize];
+        let valleys = vec![0usize, 3];
 
         let climbs = detect_climbs(&peaks, &valleys, &pts, &dists);
         assert_eq!(climbs.len(), 2);
