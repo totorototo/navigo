@@ -55,6 +55,7 @@ downstream method assumes precomputed, non-empty data. `Trace` is `pub use`'d
 from `lib.rs` and the WASM layer wraps it rather than re-implementing it.
 
 **Layering**, lowest to highest level:
+
 - `location.rs`, `area.rs` — primitive geo types (haversine distance, bearing).
 - `simplify.rs`, `elevation.rs`, `extrema.rs`, `climbs.rs` — algorithms run
   once inside `Trace::new` (Douglas-Peucker, median-smoothed gain/loss with
@@ -139,18 +140,18 @@ git push -u origin fix/my-fix         # CI runs on the branch
 
 ### What CI enforces on every PR
 
-| Check | Gate |
-|---|---|
+| Check                  | Gate                                   |
+| ---------------------- | -------------------------------------- |
 | `Test / Lint / Format` | clippy −D warnings, rustfmt, all tests |
-| `Code coverage` | ≥ 95% lines / ≥ 90% regions |
-| `WASM build (demo)` | wasm-pack + Vite build succeeds |
+| `Code coverage`        | ≥ 95% lines / ≥ 90% regions            |
+| `WASM build (demo)`    | wasm-pack + Vite build succeeds        |
 
 All three must be green before GitHub will allow the merge.
 
 ### What release-please does
 
 After a PR is merged to `main`, release-please inspects the new commits and
-keeps a "chore: release X.Y.Z" PR up to date. Merging *that* PR is the only
+keeps a "chore: release X.Y.Z" PR up to date. Merging _that_ PR is the only
 path to a release — it bumps `Cargo.toml`, writes `CHANGELOG.md`, creates
 the tag, and triggers crates.io / npm publish and Netlify deploy.
 **Never bump `Cargo.toml` manually.**
@@ -169,12 +170,12 @@ Versioning is fully automated via release-please — **do not manually bump
 
 Use conventional commit prefixes and release-please takes care of the rest:
 
-| Commit prefix | Version bump |
-|---|---|
-| `fix:` | patch — `0.x.y` → `0.x.(y+1)` |
-| `feat:` | minor — `0.x.y` → `0.(x+1).0` |
-| `feat!:` or `fix!:` | minor — same (breaking changes bump minor while `< 1.0`) |
-| `chore:`, `ci:`, `docs:`, `style:`, `test:` | no bump |
+| Commit prefix                               | Version bump                                             |
+| ------------------------------------------- | -------------------------------------------------------- |
+| `fix:`                                      | patch — `0.x.y` → `0.x.(y+1)`                            |
+| `feat:`                                     | minor — `0.x.y` → `0.(x+1).0`                            |
+| `feat!:` or `fix!:`                         | minor — same (breaking changes bump minor while `< 1.0`) |
+| `chore:`, `ci:`, `docs:`, `style:`, `test:` | no bump                                                  |
 
 On every push to `main`, the `release-please.yml` workflow maintains an
 open "chore: release X.Y.Z" PR that accumulates unreleased changes. Merging
