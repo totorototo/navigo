@@ -38,28 +38,24 @@ Run this before every commit and push. Stop at the first failure — do not proc
    - Subject line: imperative mood, no period, ≤72 chars
    - No `Co-authored-by` trailers
 
-7. **Push**
+7. **Push to branch and open PR — never push directly to `main`**
+   `main` is protected. Always work on a short-lived branch:
    ```
-   git push
+   git checkout main && git pull
+   git checkout -b fix/<short-description>   # or feat/ docs/ ci/ chore/
+   # … make changes, run steps 1–6 …
+   git push -u origin fix/<short-description>
+   # open PR on GitHub → wait for green CI → merge
    ```
 
-## For a release (version bump)
+## Releasing
 
-After steps 1–5, and before committing:
+**Never bump `Cargo.toml` or create tags manually.**
 
-- Bump `version` in `Cargo.toml` (minor = `0.X.0`, patch = `0.0.X`)
-- Do **not** hand-edit `npm/*/package.json` — CI syncs it from `Cargo.toml`
+release-please handles this automatically. After your PR is merged to `main`:
+- release-please opens (or updates) a "chore: release X.Y.Z" PR
+- Merging that PR bumps `Cargo.toml`, writes `CHANGELOG.md`, creates the tag,
+  and triggers crates.io / npm publish and Netlify deploy
 
-Then:
-```
-git add Cargo.toml ...
-git commit -m "chore: bump version to X.Y.Z"
-```
-
-**Important**: the version bump must be the *last* commit before tagging — do not let unrelated commits land between it and the tag.
-
-```
-git tag vX.Y.Z
-git log --oneline -1 vX.Y.Z   # verify tag points at the right commit
-git push && git push origin vX.Y.Z
-```
+The version bump is determined by your conventional commit prefix:
+- `fix:` → patch, `feat:` → minor, `feat!:`/`fix!:` → minor (while `< 1.0`)

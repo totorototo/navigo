@@ -55,6 +55,7 @@ downstream method assumes precomputed, non-empty data. `Trace` is `pub use`'d
 from `lib.rs` and the WASM layer wraps it rather than re-implementing it.
 
 **Layering**, lowest to highest level:
+
 - `location.rs`, `area.rs` — primitive geo types (haversine distance, bearing).
 - `simplify.rs`, `elevation.rs`, `extrema.rs`, `climbs.rs` — algorithms run
   once inside `Trace::new` (Douglas-Peucker, median-smoothed gain/loss with
@@ -104,6 +105,57 @@ assume non-empty, valid data rather than re-checking.
   along with a 95%/90% line/region coverage floor — keep new code covered by
   tests in the same PR.
 
+## Branch strategy
+
+`main` is protected — direct pushes are blocked and CI must pass before any
+PR can be merged. All work goes through a short-lived branch and a PR.
+
+### Branch naming
+
+Branch names follow the same conventional-commit prefix as the commit they
+carry, so the PR list mirrors the commit log at a glance:
+
+```bash
+git checkout -b fix/<short-description>    # bug or correctness issue
+git checkout -b feat/<short-description>   # new capability
+git checkout -b docs/<short-description>   # documentation only
+git checkout -b ci/<short-description>     # CI / tooling / infra
+git checkout -b chore/<short-description>  # housekeeping, no code change
+```
+
+### Typical workflow
+
+```bash
+git checkout main && git pull          # always branch off a fresh main
+git checkout -b fix/my-fix
+
+# … make changes …
+
+git add -p                             # stage only what belongs to this fix
+git commit -m "fix(scope): description"
+git push -u origin fix/my-fix         # CI runs on the branch
+# open PR on GitHub → wait for green CI → merge
+# release-please picks up the commit type and updates the pending release PR
+```
+
+### What CI enforces on every PR
+
+| Check                  | Gate                                   |
+| ---------------------- | -------------------------------------- |
+| `Test / Lint / Format` | clippy −D warnings, rustfmt, all tests |
+| `Code coverage`        | ≥ 95% lines / ≥ 90% regions            |
+| `WASM build (demo)`    | wasm-pack + Vite build succeeds        |
+
+All three must be green before GitHub will allow the merge.
+
+### What release-please does
+
+After a PR is merged to `main`, release-please inspects the new commits and
+keeps a "chore: release X.Y.Z" PR up to date. Merging _that_ PR is the only
+path to a release — it bumps `Cargo.toml`, writes `CHANGELOG.md`, creates
+the tag, and triggers crates.io / npm publish and Netlify deploy.
+**Never bump `Cargo.toml` manually.**
+
 ## Before committing/pushing
 
 1. Update the relevant README(s) (`README.md`, `demo/README.md`,
@@ -118,12 +170,12 @@ Versioning is fully automated via release-please — **do not manually bump
 
 Use conventional commit prefixes and release-please takes care of the rest:
 
-| Commit prefix | Version bump |
-|---|---|
-| `fix:` | patch — `0.x.y` → `0.x.(y+1)` |
-| `feat:` | minor — `0.x.y` → `0.(x+1).0` |
-| `feat!:` or `fix!:` | minor — same (breaking changes bump minor while `< 1.0`) |
-| `chore:`, `ci:`, `docs:`, `style:`, `test:` | no bump |
+| Commit prefix                               | Version bump                                             |
+| ------------------------------------------- | -------------------------------------------------------- |
+| `fix:`                                      | patch — `0.x.y` → `0.x.(y+1)`                            |
+| `feat:`                                     | minor — `0.x.y` → `0.(x+1).0`                            |
+| `feat!:` or `fix!:`                         | minor — same (breaking changes bump minor while `< 1.0`) |
+| `chore:`, `ci:`, `docs:`, `style:`, `test:` | no bump                                                  |
 
 On every push to `main`, the `release-please.yml` workflow maintains an
 open "chore: release X.Y.Z" PR that accumulates unreleased changes. Merging
