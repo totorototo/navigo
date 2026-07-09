@@ -186,6 +186,72 @@ pub fn find_valleys(signal: &[f32]) -> Vec<usize> {
     filter_by_prominence(&clustered, signal, MIN_PROMINENCE, false)
 }
 
+// ── Alternation ──────────────────────────────────────────────────────────────
+
+/// `find_peaks`/`find_valleys` run as two fully independent detection passes,
+/// so nothing guarantees the merged timeline alternates peak/valley/peak/…
+/// A shallow bump that fails the prominence/vote threshold as a peak can
+/// leave two valleys adjacent (or symmetrically, two peaks) with no
+/// opposite-type extremum between them.
+///
+/// This collapses each run of consecutive same-type extrema down to its
+/// single best representative (highest for a run of peaks, lowest for a run
+/// of valleys), producing two lists that strictly alternate when merged by
+/// index. Intended for consumers (climb detection, elevation-profile views)
+/// that assume alternation; it does not change the detection thresholds.
+pub fn reconcile_alternating(
+    peaks: &[usize],
+    valleys: &[usize],
+    signal: &[f32],
+) -> (Vec<usize>, Vec<usize>) {
+    if peaks.is_empty() || valleys.is_empty() {
+        return (peaks.to_vec(), valleys.to_vec());
+    }
+
+    // Merge both lists into a single (index, is_peak) timeline sorted by index.
+    let mut merged: Vec<(usize, bool)> = peaks
+        .iter()
+        .map(|&i| (i, true))
+        .chain(valleys.iter().map(|&i| (i, false)))
+        .collect();
+    merged.sort_by_key(|&(i, _)| i);
+
+    let mut out_peaks = Vec::with_capacity(peaks.len());
+    let mut out_valleys = Vec::with_capacity(valleys.len());
+
+    let mut run_start = 0;
+    while run_start < merged.len() {
+        let is_peak = merged[run_start].1;
+        let mut run_end = run_start + 1;
+        while run_end < merged.len() && merged[run_end].1 == is_peak {
+            run_end += 1;
+        }
+
+        // Keep the most significant extremum within this same-type run.
+        let best = merged[run_start..run_end]
+            .iter()
+            .map(|&(idx, _)| idx)
+            .max_by(|&a, &b| {
+                let (va, vb) = (signal[a], signal[b]);
+                if is_peak {
+                    va.partial_cmp(&vb).unwrap()
+                } else {
+                    vb.partial_cmp(&va).unwrap()
+                }
+            })
+            .expect("run is non-empty");
+
+        if is_peak {
+            out_peaks.push(best);
+        } else {
+            out_valleys.push(best);
+        }
+        run_start = run_end;
+    }
+
+    (out_peaks, out_valleys)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -259,5 +325,51 @@ mod tests {
         let signal = vec![0.0f32, 50.0, 100.0, 60.0, 40.0, 55.0, 70.0, 30.0, 0.0];
         let p = extremum_prominence(&signal, 6, true);
         assert!((p - 30.0).abs() < 0.001, "prominence={}", p);
+    }
+
+    #[test]
+    fn reconcile_collapses_consecutive_valleys_to_the_deepest() {
+        // idx 1 and idx 3 are both "valleys" with no peak between them;
+        // idx 3 (value 5.0) is deeper than idx 1 (value 20.0).
+        let signal = vec![100.0f32, 20.0, 50.0, 5.0, 100.0];
+        let peaks = vec![4usize];
+        let valleys = vec![1usize, 3usize];
+        let (out_peaks, out_valleys) = reconcile_alternating(&peaks, &valleys, &signal);
+        assert_eq!(out_valleys, vec![3]);
+        assert_eq!(out_peaks, vec![4]);
+    }
+
+    #[test]
+    fn reconcile_collapses_consecutive_peaks_to_the_highest() {
+        // idx 1 and idx 3 are both "peaks" with no valley between them;
+        // idx 1 (value 90.0) is higher than idx 3 (value 60.0).
+        let signal = vec![0.0f32, 90.0, 40.0, 60.0, 0.0];
+        let peaks = vec![1usize, 3usize];
+        let valleys = vec![4usize];
+        let (out_peaks, out_valleys) = reconcile_alternating(&peaks, &valleys, &signal);
+        assert_eq!(out_peaks, vec![1]);
+        assert_eq!(out_valleys, vec![4]);
+    }
+
+    #[test]
+    fn reconcile_leaves_already_alternating_sequence_untouched() {
+        let signal = vec![0.0f32, 90.0, 10.0, 80.0, 20.0, 100.0, 0.0];
+        let peaks = vec![1usize, 3usize, 5usize];
+        let valleys = vec![2usize, 4usize];
+        let (out_peaks, out_valleys) = reconcile_alternating(&peaks, &valleys, &signal);
+        assert_eq!(out_peaks, peaks);
+        assert_eq!(out_valleys, valleys);
+    }
+
+    #[test]
+    fn reconcile_handles_empty_inputs() {
+        let signal = vec![0.0f32, 1.0, 2.0];
+        let (p, v) = reconcile_alternating(&[], &[1usize], &signal);
+        assert!(p.is_empty());
+        assert_eq!(v, vec![1]);
+
+        let (p, v) = reconcile_alternating(&[1usize], &[], &signal);
+        assert_eq!(p, vec![1]);
+        assert!(v.is_empty());
     }
 }
