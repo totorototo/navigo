@@ -108,7 +108,28 @@ assume non-empty, valid data rather than re-checking.
 
 1. Update the relevant README(s) (`README.md`, `demo/README.md`,
    `npm/README.md`) to reflect the change.
-2. Bump the version in `Cargo.toml` (the npm package version is synced from
-   it automatically during release CI — don't hand-edit `npm/*/package.json`).
-3. Test the demo app (`cd demo && npm run dev` or `npm run build`) to confirm
+2. Test the demo app (`cd demo && npm run dev` or `npm run build`) to confirm
    the change works end-to-end through the freshly built WASM binary.
+
+## Releasing
+
+Versioning is fully automated via release-please — **do not manually bump
+`Cargo.toml` or edit `npm/*/package.json`**.
+
+Use conventional commit prefixes and release-please takes care of the rest:
+
+| Commit prefix | Version bump |
+|---|---|
+| `fix:` | patch — `0.x.y` → `0.x.(y+1)` |
+| `feat:` | minor — `0.x.y` → `0.(x+1).0` |
+| `feat!:` or `fix!:` | minor — same (breaking changes bump minor while `< 1.0`) |
+| `chore:`, `ci:`, `docs:`, `style:`, `test:` | no bump |
+
+On every push to `main`, the `release-please.yml` workflow maintains an
+open "chore: release X.Y.Z" PR that accumulates unreleased changes. Merging
+that PR automatically:
+
+- bumps `Cargo.toml` and writes `CHANGELOG.md`
+- creates the `vX.Y.Z` tag and GitHub release
+- publishes to crates.io and npm
+- deploys the demo to Netlify
