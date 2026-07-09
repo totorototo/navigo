@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2](https://github.com/totorototo/navigo/compare/v0.10.1...v0.10.2) (2026-07-09)
+
+
+### Bug Fixes
+
+* **extrema:** reconcile peaks/valleys to strictly alternate ([c006b4b](https://github.com/totorototo/navigo/commit/c006b4b929e43723264625c4ef669178452ac007))
+* **extrema:** reconcile peaks/valleys to strictly alternate ([de749e8](https://github.com/totorototo/navigo/commit/de749e863ae8973eea0db65512b7251ed78f5566))
+
 ## [Unreleased]
 
 ### Changed
